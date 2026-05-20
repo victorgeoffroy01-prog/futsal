@@ -292,19 +292,33 @@ def barres_horizontales(df, col_val, titre, couleur=COULEUR_PRIMAIRE, top_n=10):
 
 
 def barres_horizontales_comparaison(labels, val_joueur, val_moyenne,
-                                     nom_joueur="Joueur", nom_ref="Moy. Équipe"):
+                                     nom_joueur="Joueur", nom_ref="Moy. Équipe",
+                                     couleur_joueur=COULEUR_BLEU, couleur_ref=COULEUR_MOY):
+    """Barres horizontales doubles. Affiche TOUJOURS la valeur (y compris 0)."""
+    def fmt_val(v):
+        if v is None or pd.isna(v):
+            return "-"
+        # Toujours retourner une string, même pour 0
+        if isinstance(v, (int, float)):
+            if v == int(v):
+                return f"{int(v)}"
+            return f"{v:.1f}"
+        return str(v)
+
     fig = go.Figure()
     fig.add_trace(go.Bar(
         y=labels, x=val_moyenne, orientation='h', name=nom_ref,
-        marker=dict(color=COULEUR_MOY),
-        text=[f"{v:.1f}" if isinstance(v, (int, float)) and not pd.isna(v) else "" for v in val_moyenne],
-        textposition="outside", textfont=dict(size=11)
+        marker=dict(color=couleur_ref),
+        text=[fmt_val(v) for v in val_moyenne],
+        textposition="outside", textfont=dict(size=11),
+        cliponaxis=False
     ))
     fig.add_trace(go.Bar(
         y=labels, x=val_joueur, orientation='h', name=nom_joueur,
-        marker=dict(color=COULEUR_BLEU),
-        text=[f"{v:.1f}" if isinstance(v, (int, float)) and not pd.isna(v) else "" for v in val_joueur],
-        textposition="outside", textfont=dict(size=11)
+        marker=dict(color=couleur_joueur),
+        text=[fmt_val(v) for v in val_joueur],
+        textposition="outside", textfont=dict(size=11),
+        cliponaxis=False
     ))
     fig.update_layout(
         barmode='group',
@@ -319,7 +333,8 @@ def barres_horizontales_comparaison(labels, val_joueur, val_moyenne,
 
 
 def radar_normalise(valeurs_joueur, valeurs_ref, libelles, nom_joueur="Joueur",
-                    nom_ref="Moy. équipe"):
+                    nom_ref="Moy. équipe",
+                    couleur_joueur=COULEUR_BLEU, couleur_ref=COULEUR_MOY):
     n = len(libelles)
     maxes = [max(abs(valeurs_joueur[i] or 0), abs(valeurs_ref[i] or 0), 0.001) for i in range(n)]
     v_j_norm = [(valeurs_joueur[i] or 0) / maxes[i] for i in range(n)]
@@ -332,14 +347,14 @@ def radar_normalise(valeurs_joueur, valeurs_ref, libelles, nom_joueur="Joueur",
     fig.add_trace(go.Scatterpolar(
         r=v_r_norm + [v_r_norm[0]], theta=labels_enrichis + [labels_enrichis[0]],
         fill='toself', name=nom_ref,
-        line=dict(color=COULEUR_MOY, width=2.5),
-        fillcolor=COULEUR_MOY, opacity=0.35, marker=dict(size=7)
+        line=dict(color=couleur_ref, width=2.5),
+        fillcolor=couleur_ref, opacity=0.35, marker=dict(size=7)
     ))
     fig.add_trace(go.Scatterpolar(
         r=v_j_norm + [v_j_norm[0]], theta=labels_enrichis + [labels_enrichis[0]],
         fill='toself', name=nom_joueur,
-        line=dict(color=COULEUR_BLEU, width=2.5),
-        fillcolor=COULEUR_BLEU, opacity=0.45, marker=dict(size=7)
+        line=dict(color=couleur_joueur, width=2.5),
+        fillcolor=couleur_joueur, opacity=0.45, marker=dict(size=7)
     ))
     fig.update_layout(
         polar=dict(
@@ -361,7 +376,8 @@ def radar_normalise(valeurs_joueur, valeurs_ref, libelles, nom_joueur="Joueur",
     return fig
 
 
-def radar_comparaison_2joueurs(stats1, stats2, nom1, nom2):
+def radar_comparaison_2joueurs(stats1, stats2, nom1, nom2,
+                                couleur1=COULEUR_PRIMAIRE, couleur2=COULEUR_BLEU):
     libelles = list(stats1.keys())
     v1 = [stats1[k] or 0 for k in libelles]
     v2 = [stats2[k] or 0 for k in libelles]
@@ -376,13 +392,13 @@ def radar_comparaison_2joueurs(stats1, stats2, nom1, nom2):
     fig = go.Figure()
     fig.add_trace(go.Scatterpolar(
         r=v1n + [v1n[0]], theta=labels_enrichis + [labels_enrichis[0]], fill='toself',
-        name=nom1, line=dict(color=COULEUR_PRIMAIRE, width=2.5),
-        fillcolor=COULEUR_PRIMAIRE, opacity=0.4, marker=dict(size=7)
+        name=nom1, line=dict(color=couleur1, width=2.5),
+        fillcolor=couleur1, opacity=0.4, marker=dict(size=7)
     ))
     fig.add_trace(go.Scatterpolar(
         r=v2n + [v2n[0]], theta=labels_enrichis + [labels_enrichis[0]], fill='toself',
-        name=nom2, line=dict(color=COULEUR_BLEU, width=2.5),
-        fillcolor=COULEUR_BLEU, opacity=0.4, marker=dict(size=7)
+        name=nom2, line=dict(color=couleur2, width=2.5),
+        fillcolor=couleur2, opacity=0.4, marker=dict(size=7)
     ))
     fig.update_layout(
         polar=dict(
@@ -500,7 +516,8 @@ def heatmap_equipe(df, indicateurs_cols, labels_lignes_col="joueur"):
 # EXPORT PDF
 # ============================================================================
 
-def pdf_fiche_joueur(joueur, agg_brut, agg_40, perfs_joueur, notes_joueur, equipe_nom):
+def pdf_fiche_joueur(joueur, agg_brut, agg_min, agg_40, perfs_joueur, notes_joueur, equipe_nom, photo_path=None):
+    """PDF fiche joueur avec photo en haut à droite + 3 modes : brut, par minute, per 40 min."""
     buf = BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4,
                             leftMargin=1.5*cm, rightMargin=1.5*cm,
@@ -513,16 +530,41 @@ def pdf_fiche_joueur(joueur, agg_brut, agg_40, perfs_joueur, notes_joueur, equip
                         textColor=colors.HexColor("#FF4B4B"), spaceAfter=6)
     small = ParagraphStyle('small', parent=styles['Normal'], fontSize=9,
                            textColor=colors.grey)
-    story.append(Paragraph(f"<b>{equipe_nom}</b> — Fiche joueur", h1))
-    story.append(Paragraph(joueur, ParagraphStyle('j', parent=styles['Heading2'],
-                                                   fontSize=22, alignment=TA_LEFT)))
-    story.append(Paragraph(
+
+    # En-tête : titre à gauche + photo en haut à droite (table à 2 colonnes)
+    from reportlab.platypus import Image as RLImage
+    titre_para = []
+    titre_para.append(Paragraph(f"<b>{equipe_nom}</b> — Fiche joueur", h1))
+    titre_para.append(Paragraph(joueur, ParagraphStyle('j', parent=styles['Heading2'],
+                                                       fontSize=22, alignment=TA_LEFT)))
+    titre_para.append(Paragraph(
         f"{agg_brut.get('poste','-')} · N°{int(agg_brut['numero']) if pd.notna(agg_brut.get('numero')) else '-'} · "
-        f"{int(agg_brut['matchs'])} matchs · {agg_brut['temps_jeu_min']:.1f} minutes jouées", small))
-    story.append(Paragraph(f"<i>Document généré le {date.today().strftime('%d/%m/%Y')}</i>", small))
-    story.append(Spacer(1, 0.5*cm))
+        f"{int(agg_brut['matchs'])} matchs · {agg_brut['temps_jeu_min']:.1f} min jouées", small))
+    titre_para.append(Paragraph(f"<i>Document généré le {date.today().strftime('%d/%m/%Y')}</i>", small))
+
+    # Cellule photo (ou placeholder texte)
+    if photo_path:
+        try:
+            photo_cell = RLImage(photo_path, width=3.2*cm, height=3.2*cm)
+        except Exception:
+            photo_cell = Paragraph("", small)
+    else:
+        photo_cell = Paragraph("", small)
+
+    header_table = Table(
+        [[titre_para, photo_cell]],
+        colWidths=[13*cm, 4*cm]
+    )
+    header_table.setStyle(TableStyle([
+        ('VALIGN', (0,0), (-1,-1), 'TOP'),
+        ('ALIGN', (1,0), (1,0), 'RIGHT'),
+    ]))
+    story.append(header_table)
+    story.append(Spacer(1, 0.4*cm))
+
+    # Tableau stats : 4 colonnes (Indicateur, Total brut, Par minute, Per 40 min)
     story.append(Paragraph("Statistiques", h2))
-    data = [["Indicateur", "Total (brut)", "Per 40 min"]]
+    data = [["Indicateur", "Total brut", "Par minute", "Per 40 min"]]
     rows = [
         ("Buts", "buts"), ("Passes décisives", "passes_decisives"),
         ("Tirs total", "tirs_total"), ("Tirs cadrés", "tirs_cadres"),
@@ -533,13 +575,15 @@ def pdf_fiche_joueur(joueur, agg_brut, agg_40, perfs_joueur, notes_joueur, equip
     ]
     for lbl, col in rows:
         v_brut = agg_brut.get(col, 0)
+        v_min = agg_min.get(col, 0) if agg_min is not None else None
         v_40 = agg_40.get(col, 0)
         data.append([
             lbl,
             f"{int(v_brut)}" if pd.notna(v_brut) else "-",
+            f"{v_min:.2f}" if v_min is not None and pd.notna(v_min) else "-",
             f"{v_40:.2f}" if pd.notna(v_40) else "-"
         ])
-    t = Table(data, colWidths=[6*cm, 4*cm, 4*cm])
+    t = Table(data, colWidths=[5.5*cm, 3.5*cm, 3.5*cm, 3.5*cm])
     t.setStyle(TableStyle([
         ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#185FA5")),
         ('TEXTCOLOR', (0,0), (-1,0), colors.white),
@@ -648,9 +692,111 @@ def pdf_notation_match(match_libelle, notes_match, equipe_nom):
     return buf
 
 
-# ============================================================================
-# DICTIONNAIRES D'INDICATEURS (utilisés dans plusieurs pages)
-# ============================================================================
+def pdf_generique(titre_page, equipe_nom, sections, paysage=False):
+    """
+    PDF générique pour les pages du site.
+    sections : liste de dicts, chacun de type :
+      - {"type": "kpi", "label": "Buts", "value": "15"}    -> bloc KPI
+      - {"type": "table", "title": "...", "data": [[hdr], [r1], ...], "widths": [...]}
+      - {"type": "texte", "title": "...", "content": "..."}
+      - {"type": "spacer"}
+    """
+    buf = BytesIO()
+    pagesize = landscape(A4) if paysage else A4
+    doc = SimpleDocTemplate(buf, pagesize=pagesize,
+                            leftMargin=1.5*cm, rightMargin=1.5*cm,
+                            topMargin=1.5*cm, bottomMargin=1.5*cm)
+    story = []
+    styles = getSampleStyleSheet()
+    h1 = ParagraphStyle('h1', parent=styles['Heading1'], fontSize=18,
+                        textColor=colors.HexColor("#185FA5"))
+    h2 = ParagraphStyle('h2', parent=styles['Heading2'], fontSize=13,
+                        textColor=colors.HexColor("#FF4B4B"), spaceAfter=6)
+    small = ParagraphStyle('small', parent=styles['Normal'], fontSize=9,
+                           textColor=colors.grey)
+    normal = styles['Normal']
+
+    story.append(Paragraph(f"<b>{equipe_nom}</b> — {titre_page}", h1))
+    story.append(Paragraph(f"<i>Document généré le {date.today().strftime('%d/%m/%Y')}</i>", small))
+    story.append(Spacer(1, 0.5*cm))
+
+    # Bloc KPI : regrouper les sections kpi consécutives en une seule ligne
+    i = 0
+    while i < len(sections):
+        s = sections[i]
+        if s["type"] == "kpi":
+            # Collecter les KPI consécutifs
+            kpis = []
+            while i < len(sections) and sections[i]["type"] == "kpi":
+                kpis.append(sections[i])
+                i += 1
+            # Construire une table KPI
+            data_kpi = [[k["label"] for k in kpis], [str(k["value"]) for k in kpis]]
+            w = (pagesize[0] - 3*cm) / len(kpis)
+            tk = Table(data_kpi, colWidths=[w] * len(kpis))
+            tk.setStyle(TableStyle([
+                ('FONTSIZE', (0,0), (-1,0), 9),
+                ('FONTSIZE', (0,1), (-1,1), 16),
+                ('FONTNAME', (0,1), (-1,1), 'Helvetica-Bold'),
+                ('TEXTCOLOR', (0,0), (-1,0), colors.grey),
+                ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+                ('BOTTOMPADDING', (0,0), (-1,0), 2),
+                ('TOPPADDING', (0,1), (-1,1), 2),
+            ]))
+            story.append(tk)
+            story.append(Spacer(1, 0.4*cm))
+        elif s["type"] == "table":
+            if s.get("title"):
+                story.append(Paragraph(s["title"], h2))
+            data = s["data"]
+            widths = s.get("widths")
+            t = Table(data, colWidths=widths)
+            t.setStyle(TableStyle([
+                ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#185FA5")),
+                ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+                ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+                ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#cccccc")),
+                ('ALIGN', (1,0), (-1,-1), 'CENTER'),
+                ('FONTSIZE', (0,0), (-1,-1), 9),
+                ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.whitesmoke, colors.white]),
+                ('PADDING', (0,0), (-1,-1), 4)
+            ]))
+            story.append(t)
+            story.append(Spacer(1, 0.4*cm))
+            i += 1
+        elif s["type"] == "texte":
+            if s.get("title"):
+                story.append(Paragraph(s["title"], h2))
+            story.append(Paragraph(s["content"], normal))
+            story.append(Spacer(1, 0.3*cm))
+            i += 1
+        elif s["type"] == "spacer":
+            story.append(Spacer(1, 0.5*cm))
+            i += 1
+        else:
+            i += 1
+
+    doc.build(story)
+    buf.seek(0)
+    return buf
+
+
+def bouton_pdf(label_bouton, generer_pdf_func, nom_fichier_base, type_btn="secondary"):
+    """Helper : crée un bouton 'Générer PDF' qui appelle la fonction de génération
+    et affiche le bouton de téléchargement."""
+    if st.button(label_bouton, type=type_btn, key=f"pdf_btn_{nom_fichier_base}"):
+        pdf_buf = generer_pdf_func()
+        nom_fichier = f"{nom_fichier_base}_{date.today().strftime('%Y%m%d')}.pdf"
+        st.download_button(
+            label="⬇ Télécharger le PDF",
+            data=pdf_buf,
+            file_name=nom_fichier,
+            mime="application/pdf",
+            key=f"dl_{nom_fichier_base}"
+        )
+
+
+
 
 INDICATEURS_LIBELLE = {
     "buts": "Buts",
@@ -797,6 +943,49 @@ if page == "Accueil":
         </div>
         """, unsafe_allow_html=True)
 
+    # ===== EXPORT PDF =====
+    st.markdown("---")
+    st.subheader("Exporter")
+    if st.button("📄 Générer un PDF du bilan saison", type="primary", key="pdf_accueil"):
+        bilan = charger("SELECT * FROM v_equipe_bilan").iloc[0]
+        agg_all = agreger_joueur(get_perfs(), "Stats brutes")
+        agg_all = agg_all[agg_all["role"] != "Gardien"].copy()
+        top_buteurs = agg_all.sort_values("buts", ascending=False).head(5)
+        top_passeurs = agg_all.sort_values("passes_decisives", ascending=False).head(5)
+
+        sections = [
+            {"type": "kpi", "label": "Matchs", "value": int(bilan["matchs"])},
+            {"type": "kpi", "label": "Victoires", "value": int(bilan["victoires"])},
+            {"type": "kpi", "label": "Nuls", "value": int(bilan["nuls"])},
+            {"type": "kpi", "label": "Défaites", "value": int(bilan["defaites"])},
+            {"type": "kpi", "label": "Buts pour", "value": int(bilan["buts_pour"])},
+            {"type": "kpi", "label": "Buts contre", "value": int(bilan["buts_contre"])},
+            {"type": "table", "title": "Résultats",
+             "data": [["Match", "Lieu", "Buts pour", "Buts contre", "Résultat"]] +
+                     [[m["libelle"], m["lieu"] or "-", str(m["score_pour"]),
+                       str(m["score_contre"]), m["resultat"]]
+                      for _, m in matchs.iterrows()],
+             "widths": [3*cm, 3*cm, 2.5*cm, 2.5*cm, 3*cm]},
+            {"type": "table", "title": "Top 5 buteurs",
+             "data": [["Joueur", "Poste", "Buts"]] +
+                     [[b["joueur"], b["poste"] or "-", str(int(b["buts"]))]
+                      for _, b in top_buteurs.iterrows() if b["buts"] > 0],
+             "widths": [6*cm, 4*cm, 3*cm]},
+            {"type": "table", "title": "Top 5 passeurs",
+             "data": [["Joueur", "Poste", "Passes déc."]] +
+                     [[p["joueur"], p["poste"] or "-", str(int(p["passes_decisives"]))]
+                      for _, p in top_passeurs.iterrows() if p["passes_decisives"] > 0],
+             "widths": [6*cm, 4*cm, 3*cm]},
+        ]
+        pdf_buf = pdf_generique("Bilan de la saison", equipe["nom"], sections)
+        st.download_button(
+            label="⬇ Télécharger le PDF",
+            data=pdf_buf,
+            file_name=f"bilan_saison_{date.today().strftime('%Y%m%d')}.pdf",
+            mime="application/pdf",
+            key="dl_accueil"
+        )
+
 
 # ============================================================================
 # PAGE — VUE ÉQUIPE (avec heatmap intégrée)
@@ -899,6 +1088,52 @@ elif page == "Vue équipe":
             st.info("Aucune donnée à afficher pour ces indicateurs.")
     else:
         st.info("Sélectionne au moins un indicateur.")
+
+    # ===== EXPORT PDF =====
+    st.markdown("---")
+    if st.button("📄 Générer un PDF de la Vue équipe", type="primary", key="pdf_vue_eq"):
+        # Tableau résultats
+        tab_res = [["Match", "Lieu", "Buts pour", "Buts contre", "Résultat", "Diff"]]
+        for _, m in matchs.iterrows():
+            tab_res.append([m["libelle"], m["lieu"] or "-",
+                            str(m["score_pour"]), str(m["score_contre"]),
+                            m["resultat"], f"{m['diff_buts']:+d}"])
+        # Top contributeurs
+        agg_pdf = agreger_joueur(get_perfs(), "Stats brutes")
+        agg_pdf = agg_pdf[agg_pdf["role"] != "Gardien"].copy()
+        agg_pdf["b_plus_pd"] = agg_pdf["buts"] + agg_pdf["passes_decisives"]
+        top_pdf = agg_pdf[agg_pdf["b_plus_pd"] > 0].sort_values("b_plus_pd", ascending=False).head(10)
+        tab_top = [["Joueur", "Poste", "Buts", "PD", "B+PD"]]
+        for _, t in top_pdf.iterrows():
+            tab_top.append([t["joueur"], t["poste"] or "-",
+                            str(int(t["buts"])), str(int(t["passes_decisives"])),
+                            str(int(t["b_plus_pd"]))])
+        # Tableau stats joueurs (en brut, top 15 par buts)
+        df_stats = agg_pdf.sort_values("buts", ascending=False).head(15)
+        tab_stats = [["Joueur", "Poste", "M", "Min", "B", "PD", "T.cad", "Inter.", "Récup."]]
+        for _, j in df_stats.iterrows():
+            tab_stats.append([j["joueur"], j["poste"] or "-",
+                              str(int(j["matchs"])), f"{j['temps_jeu_min']:.0f}",
+                              str(int(j["buts"])), str(int(j["passes_decisives"])),
+                              str(int(j["tirs_cadres"])), str(int(j["interceptions"])),
+                              str(int(j["recuperations"]))])
+
+        sections = [
+            {"type": "table", "title": "Résultats", "data": tab_res,
+             "widths": [3*cm, 3*cm, 2.5*cm, 2.5*cm, 2.5*cm, 1.8*cm]},
+            {"type": "table", "title": "Top 10 contributeurs (B + PD)", "data": tab_top,
+             "widths": [5*cm, 4*cm, 2*cm, 2*cm, 2*cm]},
+            {"type": "table", "title": "Top 15 joueurs (cumul saison)", "data": tab_stats,
+             "widths": [4*cm, 3*cm, 1.2*cm, 1.5*cm, 1.5*cm, 1.5*cm, 1.5*cm, 1.5*cm, 1.5*cm]},
+        ]
+        pdf_buf = pdf_generique("Vue équipe", equipe["nom"], sections, paysage=True)
+        st.download_button(
+            label="⬇ Télécharger le PDF",
+            data=pdf_buf,
+            file_name=f"vue_equipe_{date.today().strftime('%Y%m%d')}.pdf",
+            mime="application/pdf",
+            key="dl_vue_eq"
+        )
 
 
 # ============================================================================
@@ -1044,6 +1279,53 @@ elif page == "Match":
         for _, g in gks_match.iterrows():
             st.markdown(f"🧤 **{g['joueur']}** — {int(g['arrets'] or 0)} arrêt(s), "
                         f"{int(g['buts_encaisses'] or 0)} but(s) encaissé(s) sur {g['temps_jeu_min']:.0f} min")
+
+    # ===== EXPORT PDF =====
+    st.markdown("---")
+    if st.button("📄 Générer un PDF de ce match", type="primary", key="pdf_match"):
+        # Stats équipe
+        tab_kpi = [
+            {"type": "kpi", "label": "Score", "value": f"{m_row['score_pour']} - {m_row['score_contre']}"},
+            {"type": "kpi", "label": "Résultat", "value": m_row["resultat"]},
+            {"type": "kpi", "label": "Lieu", "value": m_row["lieu"] or "-"},
+            {"type": "kpi", "label": "Tirs", "value": int(perfs_match_jc["tirs_total"].sum())},
+            {"type": "kpi", "label": "Tirs cadrés", "value": int(perfs_match_jc["tirs_cadres"].sum())},
+            {"type": "kpi", "label": "Pertes", "value": int(perfs_match_jc["pertes_de_balles"].sum())},
+        ]
+        # Compo
+        tab_compo = [["Joueur", "Poste", "Rôle", "Min", "B", "PD", "T.cad", "Inter.", "Récup.", "Pertes"]]
+        for _, p in perfs_match.sort_values("temps_jeu_min", ascending=False).iterrows():
+            tab_compo.append([p["joueur"], p["poste"] or "-", p["role"],
+                              f"{p['temps_jeu_min']:.1f}",
+                              str(int(p["buts"] or 0)), str(int(p["passes_decisives"] or 0)),
+                              str(int(p["tirs_cadres"] or 0)),
+                              str(int(p["interceptions"] or 0)),
+                              str(int(p["recuperations"] or 0)),
+                              str(int(p["pertes_de_balles"] or 0))])
+        # Faits marquants
+        faits_lignes = []
+        for _, b in buteurs.iterrows():
+            faits_lignes.append(f"⚽ {b['joueur']} — {int(b['buts'])} but(s)")
+        for _, p in passeurs.iterrows():
+            faits_lignes.append(f"🎯 {p['joueur']} — {int(p['passes_decisives'])} passe(s) déc.")
+        for _, g in gks_match.iterrows():
+            faits_lignes.append(f"🧤 {g['joueur']} — {int(g['arrets'] or 0)} arrêts, {int(g['buts_encaisses'] or 0)} BE")
+        faits_html = "<br/>".join(faits_lignes) if faits_lignes else "Aucun fait marquant."
+
+        sections = tab_kpi + [
+            {"type": "table", "title": "Composition", "data": tab_compo,
+             "widths": [3.5*cm, 2.5*cm, 2*cm, 1.5*cm, 1*cm, 1*cm, 1.4*cm, 1.4*cm, 1.4*cm, 1.4*cm]},
+            {"type": "texte", "title": "Faits marquants", "content": faits_html},
+        ]
+        titre_pdf = f"Match {m_row['libelle']}"
+        pdf_buf = pdf_generique(titre_pdf, equipe["nom"], sections, paysage=True)
+        st.download_button(
+            label="⬇ Télécharger le PDF",
+            data=pdf_buf,
+            file_name=f"match_{m_row['libelle'].replace(' ', '_')}_{date.today().strftime('%Y%m%d')}.pdf",
+            mime="application/pdf",
+            key="dl_match"
+        )
 
 
 # ============================================================================
@@ -1258,14 +1540,30 @@ elif page == "Fiche joueur":
             n = calculer_note_match(p, m_row, coefs, params)
             notes_j.append({"match": m_row["libelle"], **n})
 
-        agg_b = agreger_joueur(df_j_brut, "Stats brutes").iloc[0] if match_id_filtre is None else df_j_brut.iloc[0]
-        agg_40 = agreger_joueur(appliquer_mode(df_j_brut, "Per 40 min"), "Per 40 min").iloc[0] if match_id_filtre is None else appliquer_mode(df_j_brut, "Per 40 min").iloc[0]
+        # Préparer les 3 versions des stats : brut, par minute, per 40
+        df_j_min = appliquer_mode(df_j_brut, "Par minute")
+        df_j_40 = appliquer_mode(df_j_brut, "Per 40 min")
+        if match_id_filtre is None:
+            agg_b = agreger_joueur(df_j_brut, "Stats brutes").iloc[0]
+            agg_min_pdf = agreger_joueur(df_j_min, "Par minute").iloc[0]
+            agg_40_pdf = agreger_joueur(df_j_40, "Per 40 min").iloc[0]
+        else:
+            agg_b = df_j_brut.iloc[0]
+            agg_min_pdf = df_j_min.iloc[0]
+            agg_40_pdf = df_j_40.iloc[0]
         if "matchs" not in agg_b:
             agg_b = pd.concat([agg_b, pd.Series({"matchs": 1})])
-        if "matchs" not in agg_40:
-            agg_40 = pd.concat([agg_40, pd.Series({"matchs": 1})])
+        if "matchs" not in agg_min_pdf:
+            agg_min_pdf = pd.concat([agg_min_pdf, pd.Series({"matchs": 1})])
+        if "matchs" not in agg_40_pdf:
+            agg_40_pdf = pd.concat([agg_40_pdf, pd.Series({"matchs": 1})])
 
-        pdf_buf = pdf_fiche_joueur(joueur_sel, agg_b, agg_40, df_j_brut, notes_j, equipe["nom"])
+        # Récupérer la photo si elle existe
+        photo_pdf = photo_joueur(joueur_sel)
+
+        pdf_buf = pdf_fiche_joueur(joueur_sel, agg_b, agg_min_pdf, agg_40_pdf,
+                                    df_j_brut, notes_j, equipe["nom"],
+                                    photo_path=photo_pdf)
         nom_fichier = f"fiche_{joueur_sel.replace(' ', '_').replace('.', '')}_{date.today().strftime('%Y%m%d')}.pdf"
         st.download_button(
             label="⬇ Télécharger le PDF",
@@ -1326,7 +1624,11 @@ elif page == "Comparaison":
         labels_i = [lbl for lbl, _ in indicateurs]
         v1 = [s1[c] if pd.notna(s1[c]) else 0 for _, c in indicateurs]
         v2 = [s2[c] if pd.notna(s2[c]) else 0 for _, c in indicateurs]
-        fig = barres_horizontales_comparaison(labels_i, v1, v2, nom_joueur=j1, nom_ref=j2)
+        # Mêmes couleurs que le radar : j1=ROUGE, j2=BLEU
+        fig = barres_horizontales_comparaison(
+            labels_i, v1, v2, nom_joueur=j1, nom_ref=j2,
+            couleur_joueur=COULEUR_PRIMAIRE, couleur_ref=COULEUR_BLEU
+        )
         st.plotly_chart(fig, use_container_width=True)
 
     st.markdown("---")
@@ -1343,8 +1645,33 @@ elif page == "Comparaison":
         "Inter.": s2["interceptions"] or 0,
         "Duels +": (s2["duels_off_gagnes"] or 0) + (s2["duels_def_gagnes"] or 0)
     }
-    st.plotly_chart(radar_comparaison_2joueurs(radar_s1, radar_s2, j1, j2),
-                    use_container_width=True)
+    st.plotly_chart(
+        radar_comparaison_2joueurs(radar_s1, radar_s2, j1, j2,
+                                    couleur1=COULEUR_PRIMAIRE, couleur2=COULEUR_BLEU),
+        use_container_width=True
+    )
+
+    # ===== EXPORT PDF =====
+    st.markdown("---")
+    if st.button("📄 Générer un PDF de la comparaison", type="primary", key="pdf_cmp"):
+        tab_data = [["Indicateur (per 40)", j1, j2]]
+        for lbl, col in indicateurs:
+            v1_str = f"{s1[col]:.2f}" if pd.notna(s1[col]) else "-"
+            v2_str = f"{s2[col]:.2f}" if pd.notna(s2[col]) else "-"
+            tab_data.append([lbl, v1_str, v2_str])
+        sections = [
+            {"type": "table", "title": f"{j1} vs {j2} (Per 40 min)",
+             "data": tab_data,
+             "widths": [6*cm, 5*cm, 5*cm]},
+        ]
+        pdf_buf = pdf_generique("Comparaison de joueurs", equipe["nom"], sections)
+        st.download_button(
+            label="⬇ Télécharger le PDF",
+            data=pdf_buf,
+            file_name=f"compare_{j1.replace(' ','_').replace('.','')}_vs_{j2.replace(' ','_').replace('.','')}_{date.today().strftime('%Y%m%d')}.pdf",
+            mime="application/pdf",
+            key="dl_cmp"
+        )
 
 
 # ============================================================================
@@ -1396,6 +1723,25 @@ elif page == "Gardiens":
         detail.columns = ["Gardien", "Match", "Adv.", "Min", "BE", "Arrêts",
                           "Relances+", "Relances-", "% Rel."]
         st.dataframe(detail, hide_index=True, use_container_width=True)
+
+    # ===== EXPORT PDF =====
+    st.markdown("---")
+    if st.button("📄 Générer un PDF de la page Gardiens", type="primary", key="pdf_gk"):
+        tab_synth = [["Gardien", "M", "Min", "BE", "Arrêts", "Rel.+", "Rel.-"]]
+        for _, row in agg_disp.iterrows():
+            tab_synth.append([str(row[c]) for c in agg_disp.columns])
+        sections = [
+            {"type": "table", "title": "Synthèse gardiens", "data": tab_synth,
+             "widths": [4*cm, 1.5*cm, 2*cm, 1.8*cm, 2*cm, 1.8*cm, 1.8*cm]},
+        ]
+        pdf_buf = pdf_generique("Gardiens", equipe["nom"], sections)
+        st.download_button(
+            label="⬇ Télécharger le PDF",
+            data=pdf_buf,
+            file_name=f"gardiens_{date.today().strftime('%Y%m%d')}.pdf",
+            mime="application/pdf",
+            key="dl_gk"
+        )
 
 
 # ============================================================================
@@ -1477,6 +1823,28 @@ elif page == "Évolution":
                 df_joueur, INDICATEURS_EVOL[ind_j], ind_j, COULEUR_AMBRE),
                 use_container_width=True)
 
+    # ===== EXPORT PDF (équipe par défaut) =====
+    st.markdown("---")
+    if st.button("📄 Générer un PDF de l'évolution équipe", type="primary", key="pdf_evol"):
+        # Tableau évolution équipe : buts pour/contre par match
+        tab_evol = [["Match", "Buts pour", "Buts contre", "Résultat", "Diff"]]
+        for _, m in matchs.iterrows():
+            tab_evol.append([m["libelle"], str(m["score_pour"]), str(m["score_contre"]),
+                             m["resultat"], f"{m['diff_buts']:+d}"])
+        sections = [
+            {"type": "table", "title": "Évolution des scores match par match",
+             "data": tab_evol,
+             "widths": [4*cm, 3*cm, 3*cm, 3*cm, 2.5*cm]},
+        ]
+        pdf_buf = pdf_generique("Évolution sur la saison", equipe["nom"], sections)
+        st.download_button(
+            label="⬇ Télécharger le PDF",
+            data=pdf_buf,
+            file_name=f"evolution_{date.today().strftime('%Y%m%d')}.pdf",
+            mime="application/pdf",
+            key="dl_evol"
+        )
+
 
 # ============================================================================
 # PAGE — TENDANCE FORME (nouvelle)
@@ -1484,13 +1852,15 @@ elif page == "Évolution":
 
 elif page == "Tendance forme":
     st.title("Tendance de forme")
-    st.caption("Suivi de la progression des joueurs sur leurs derniers matchs")
+    st.caption("On compare les N derniers matchs d'un joueur aux N matchs précédents")
 
     # Sélecteurs
     col_s1, col_s2 = st.columns(2)
     with col_s1:
-        fenetre_label = st.selectbox("Fenêtre d'analyse",
-                                       ["3 derniers matchs", "5 derniers matchs", "Tous les matchs"])
+        fenetre = st.selectbox("Fenêtre de comparaison",
+                                [2, 3, 5],
+                                index=1,
+                                format_func=lambda n: f"{n} derniers vs {n} précédents")
     with col_s2:
         indicateurs_tf = {
             "Note Brute": "note",
@@ -1505,22 +1875,20 @@ elif page == "Tendance forme":
         }
         ind_tf_label = st.selectbox("Indicateur", list(indicateurs_tf.keys()))
 
-    fenetre = {"3 derniers matchs": 3, "5 derniers matchs": 5, "Tous les matchs": 999}[fenetre_label]
     col_ind = indicateurs_tf[ind_tf_label]
+    min_matchs_requis = 2 * fenetre  # N + N
 
-    # Construire le tableau
+    # Construire les données
     notes_df = calculer_toutes_notes() if col_ind == "note" else None
     perfs_all = get_perfs()
     perfs_jc = perfs_all[perfs_all["role"] != "Gardien"].copy()
 
-    # Pour chaque joueur, calculer 2 moyennes : "récent" (fenetre) et "global" (tous matchs)
     joueurs_uniques = sorted(perfs_jc["joueur"].unique())
     rows = []
     for j in joueurs_uniques:
         df_jp = perfs_jc[perfs_jc["joueur"] == j].sort_values("match_id")
         if df_jp.empty:
             continue
-
         if col_ind == "note":
             df_jp_notes = notes_df[notes_df["joueur"] == j].sort_values("match_id")
             if df_jp_notes.empty:
@@ -1532,81 +1900,143 @@ elif page == "Tendance forme":
         else:
             valeurs_all = df_jp[col_ind].tolist()
 
-        # Récent = fenetre derniers, global = tous
-        valeurs_recent = valeurs_all[-fenetre:] if fenetre < 999 else valeurs_all
-        moy_recent = sum(valeurs_recent) / len(valeurs_recent) if valeurs_recent else 0
-        moy_global = sum(valeurs_all) / len(valeurs_all) if valeurs_all else 0
-        diff = moy_recent - moy_global
+        n_total = len(valeurs_all)
+        # On ne peut comparer que si on a au moins 2N matchs
+        if n_total < min_matchs_requis:
+            rows.append({
+                "joueur": j, "n_matchs": n_total,
+                "moy_recent": None, "moy_precedent": None,
+                "diff": None, "tendance": "—",
+                "couleur": COULEUR_GRIS, "statut": "Pas assez de matchs"
+            })
+            continue
 
-        # Tendance : flèche selon écart relatif
-        if abs(diff) < 0.05 * max(abs(moy_global), 0.1):
-            tendance = "→"
+        # N derniers vs N précédents
+        recent = valeurs_all[-fenetre:]
+        precedent = valeurs_all[-2*fenetre:-fenetre]
+        moy_recent = sum(recent) / len(recent)
+        moy_precedent = sum(precedent) / len(precedent)
+        diff = moy_recent - moy_precedent
+
+        # Tendance : seuil 5% de la moyenne précédente, minimum 0.1
+        seuil = max(0.05 * abs(moy_precedent), 0.1)
+        if abs(diff) < seuil:
+            tendance = "→ Stable"
             couleur_t = COULEUR_GRIS
         elif diff > 0:
-            tendance = "↑"
+            tendance = "↑ En progression"
             couleur_t = COULEUR_VERT
         else:
-            tendance = "↓"
+            tendance = "↓ En régression"
             couleur_t = COULEUR_PRIMAIRE
 
         rows.append({
-            "joueur": j,
+            "joueur": j, "n_matchs": n_total,
             "moy_recent": round(moy_recent, 2),
-            "moy_global": round(moy_global, 2),
+            "moy_precedent": round(moy_precedent, 2),
             "diff": round(diff, 2),
             "tendance": tendance,
             "couleur": couleur_t,
-            "n_matchs": len(valeurs_all),
-            "n_recent": len(valeurs_recent)
+            "statut": "OK"
         })
 
-    df_t = pd.DataFrame(rows).sort_values("diff", ascending=False)
+    df_t = pd.DataFrame(rows)
 
-    # Affichage en 2 colonnes : tableau + graphe
+    # Séparer les joueurs comparables des autres
+    df_ok = df_t[df_t["statut"] == "OK"].sort_values("diff", ascending=False)
+    df_pas_assez = df_t[df_t["statut"] != "OK"]
+
     st.markdown("---")
     st.subheader(f"Forme actuelle — {ind_tf_label}")
-    st.caption(f"_Comparaison : moyenne sur {fenetre_label.lower()} vs moyenne sur la saison_")
+    st.caption(f"_Moyenne sur les {fenetre} derniers matchs vs les {fenetre} précédents (il faut au moins {min_matchs_requis} matchs)_")
 
-    # Tableau visuel
-    col_tab, col_chart = st.columns([1, 1.2])
+    if df_ok.empty:
+        st.warning(f"⚠️ Aucun joueur n'a encore joué assez de matchs pour comparer "
+                   f"sur cette fenêtre ({min_matchs_requis} matchs requis). "
+                   f"Essaie une fenêtre plus petite, ou attends d'avoir plus de matchs.")
+    else:
+        col_tab, col_chart = st.columns([1, 1.2])
 
-    with col_tab:
-        affichage_rows = []
-        for _, r in df_t.iterrows():
-            affichage_rows.append({
-                "Joueur": r["joueur"],
-                "Moy. récent": r["moy_recent"],
-                "Moy. saison": r["moy_global"],
-                "Δ": f"{r['diff']:+.2f}",
-                "Forme": r["tendance"]
-            })
-        st.dataframe(pd.DataFrame(affichage_rows), hide_index=True, use_container_width=True,
-                     height=min(500, 35 * len(affichage_rows) + 50))
+        with col_tab:
+            affichage_rows = []
+            for _, r in df_ok.iterrows():
+                affichage_rows.append({
+                    "Joueur": r["joueur"],
+                    f"{fenetre} derniers": r["moy_recent"],
+                    f"{fenetre} précédents": r["moy_precedent"],
+                    "Δ": f"{r['diff']:+.2f}",
+                    "Tendance": r["tendance"]
+                })
+            st.dataframe(pd.DataFrame(affichage_rows), hide_index=True, use_container_width=True,
+                         height=min(600, 35 * len(affichage_rows) + 50))
 
-    with col_chart:
-        # Graphe : barres horizontales triées par diff (qui progresse / qui régresse)
-        df_sorted = df_t.sort_values("diff", ascending=True)
-        couleurs_bars = [COULEUR_VERT if d > 0 else (COULEUR_GRIS if abs(d) < 0.01 else COULEUR_PRIMAIRE)
-                         for d in df_sorted["diff"]]
-        fig = go.Figure(go.Bar(
-            y=df_sorted["joueur"], x=df_sorted["diff"], orientation='h',
-            marker=dict(color=couleurs_bars),
-            text=df_sorted["diff"].apply(lambda v: f"{v:+.2f}"),
-            textposition="outside", textfont=dict(size=11)
-        ))
-        fig.update_layout(
-            title=f"Δ {ind_tf_label} (récent - global)",
-            height=max(400, 25 * len(df_sorted) + 80),
-            margin=dict(l=10, r=40, t=50, b=20),
-            xaxis=dict(showgrid=True, gridcolor="rgba(128,128,128,0.2)",
-                       zeroline=True, zerolinecolor="#888", zerolinewidth=2),
-            yaxis=dict(showgrid=False, automargin=True),
-            plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-            showlegend=False
+        with col_chart:
+            df_sorted = df_ok.sort_values("diff", ascending=True)
+            couleurs_bars = []
+            for d in df_sorted["diff"]:
+                if d > 0.1:
+                    couleurs_bars.append(COULEUR_VERT)
+                elif d < -0.1:
+                    couleurs_bars.append(COULEUR_PRIMAIRE)
+                else:
+                    couleurs_bars.append(COULEUR_GRIS)
+            fig = go.Figure(go.Bar(
+                y=df_sorted["joueur"], x=df_sorted["diff"], orientation='h',
+                marker=dict(color=couleurs_bars),
+                text=df_sorted["diff"].apply(lambda v: f"{v:+.2f}"),
+                textposition="outside", textfont=dict(size=11),
+                cliponaxis=False
+            ))
+            fig.update_layout(
+                title=f"Δ {ind_tf_label} ({fenetre} derniers − {fenetre} précédents)",
+                height=max(400, 28 * len(df_sorted) + 80),
+                margin=dict(l=10, r=40, t=50, b=20),
+                xaxis=dict(showgrid=True, gridcolor="rgba(128,128,128,0.2)",
+                           zeroline=True, zerolinecolor="#888", zerolinewidth=2),
+                yaxis=dict(showgrid=False, automargin=True),
+                plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+                showlegend=False
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+        st.caption(
+            "**↑ vert** = progression nette · **↓ rouge** = régression nette · "
+            "**→ gris** = stable (Δ < 10% ou < 0.1). "
+            "La forme se base sur l'écart entre les 2 dernières périodes de jeu."
         )
-        st.plotly_chart(fig, use_container_width=True)
 
-    st.caption("**↑ vert** = en progression · **↓ rouge** = en régression · **→ gris** = stable. La forme se base sur l'écart entre la moyenne récente et la moyenne saison de chaque joueur.")
+    # Joueurs sans assez de matchs
+    if not df_pas_assez.empty:
+        st.markdown("---")
+        st.markdown("##### Joueurs sans données suffisantes")
+        st.caption(f"Ces joueurs ont moins de {min_matchs_requis} matchs.")
+        not_enough = df_pas_assez[["joueur", "n_matchs"]].copy()
+        not_enough.columns = ["Joueur", "Matchs joués"]
+        st.dataframe(not_enough, hide_index=True, use_container_width=True)
+
+    # ===== EXPORT PDF =====
+    if not df_ok.empty:
+        st.markdown("---")
+        if st.button("📄 Générer un PDF de la tendance", type="primary", key="pdf_tf"):
+            tab_tf = [["Joueur", f"{fenetre} derniers", f"{fenetre} précédents", "Δ", "Tendance"]]
+            for _, r in df_ok.iterrows():
+                tab_tf.append([r["joueur"], f"{r['moy_recent']}",
+                               f"{r['moy_precedent']}", f"{r['diff']:+.2f}",
+                               r["tendance"]])
+            sections = [
+                {"type": "table",
+                 "title": f"Tendance de forme — {ind_tf_label}",
+                 "data": tab_tf,
+                 "widths": [5*cm, 3*cm, 3*cm, 2*cm, 4*cm]},
+            ]
+            pdf_buf = pdf_generique("Tendance de forme", equipe["nom"], sections)
+            st.download_button(
+                label="⬇ Télécharger le PDF",
+                data=pdf_buf,
+                file_name=f"tendance_forme_{date.today().strftime('%Y%m%d')}.pdf",
+                mime="application/pdf",
+                key="dl_tf"
+            )
 
 
 # ============================================================================
@@ -1728,6 +2158,29 @@ elif page == "Calendrier":
                 </div>
             </div>
             """, unsafe_allow_html=True)
+
+    # ===== EXPORT PDF =====
+    st.markdown("---")
+    if st.button("📄 Générer un PDF du calendrier", type="primary", key="pdf_cal"):
+        tab_cal = [["Date", "Match", "Lieu", "Compétition", "Score", "Résultat"]]
+        for _, m in matchs.iterrows():
+            tab_cal.append([
+                str(m["date_match"]) if pd.notna(m["date_match"]) and m["date_match"] else "-",
+                m["libelle"], m["lieu"] or "-", m["competition"] or "-",
+                f"{m['score_pour']} - {m['score_contre']}", m["resultat"]
+            ])
+        sections = [
+            {"type": "table", "title": "Matchs joués", "data": tab_cal,
+             "widths": [2.5*cm, 3*cm, 2.5*cm, 3*cm, 2*cm, 2.5*cm]},
+        ]
+        pdf_buf = pdf_generique("Calendrier de la saison", equipe["nom"], sections)
+        st.download_button(
+            label="⬇ Télécharger le PDF",
+            data=pdf_buf,
+            file_name=f"calendrier_{date.today().strftime('%Y%m%d')}.pdf",
+            mime="application/pdf",
+            key="dl_cal"
+        )
 
 
 # ============================================================================
