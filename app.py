@@ -279,6 +279,7 @@ def rendu_terrain_futsal(joueurs_quatuor, gardien):
     Génère le HTML d'un terrain de futsal avec les joueurs positionnés en losange.
     joueurs_quatuor : liste de dicts {joueur, poste, ...}
     gardien : dict du gardien titulaire ou None
+    HTML compacté sur une ligne pour éviter que Streamlit le rende comme un bloc de code.
     """
     placements = positions_losange(joueurs_quatuor)
 
@@ -287,64 +288,48 @@ def rendu_terrain_futsal(joueurs_quatuor, gardien):
         bordure = "#FF4B4B" if est_gardien else "#FFFFFF"
         nom_court = j["joueur"]
         if photo:
-            contenu = (
-                f'<img src="{photo}" '
-                f'style="width:100%;height:100%;object-fit:cover;border-radius:50%;" />'
-            )
+            contenu = (f'<img src="{photo}" '
+                       f'style="width:100%;height:100%;object-fit:cover;border-radius:50%;"/>')
         else:
-            # Pas de photo : initiales dans un cercle
             initiales = "".join([m[0] for m in nom_court.replace(".", "").split()[:2]]).upper()
-            contenu = (
-                f'<div style="width:100%;height:100%;border-radius:50%;'
-                f'background:#1c2733;display:flex;align-items:center;justify-content:center;'
-                f'color:#fff;font-weight:700;font-size:18px;">{initiales}</div>'
-            )
-        return f"""
-        <div style="position:absolute;left:{x}%;top:{y}%;transform:translate(-50%,-50%);
-                    text-align:center;width:90px;">
-            <div style="width:58px;height:58px;border-radius:50%;border:3px solid {bordure};
-                        margin:0 auto;overflow:hidden;box-shadow:0 2px 6px rgba(0,0,0,0.5);
-                        background:#0d1117;">
-                {contenu}
-            </div>
-            <div style="margin-top:4px;font-size:11px;font-weight:600;color:#fff;
-                        text-shadow:0 1px 3px rgba(0,0,0,0.9);white-space:nowrap;">
-                {nom_court}
-            </div>
-        </div>"""
+            contenu = (f'<div style="width:100%;height:100%;border-radius:50%;'
+                       f'background:#1c2733;display:flex;align-items:center;justify-content:center;'
+                       f'color:#fff;font-weight:700;font-size:18px;">{initiales}</div>')
+        return (
+            f'<div style="position:absolute;left:{x}%;top:{y}%;transform:translate(-50%,-50%);'
+            f'text-align:center;width:90px;">'
+            f'<div style="width:58px;height:58px;border-radius:50%;border:3px solid {bordure};'
+            f'margin:0 auto;overflow:hidden;box-shadow:0 2px 6px rgba(0,0,0,0.5);'
+            f'background:#0d1117;">{contenu}</div>'
+            f'<div style="margin-top:4px;font-size:11px;font-weight:600;color:#fff;'
+            f'text-shadow:0 1px 3px rgba(0,0,0,0.9);white-space:nowrap;">{nom_court}</div>'
+            f'</div>'
+        )
 
     pastilles_html = "".join(pastille(j, x, y) for j, x, y in placements)
-    gardien_html = ""
-    if gardien:
-        gardien_html = pastille(gardien, 50, 90, est_gardien=True)
+    gardien_html = pastille(gardien, 50, 90, est_gardien=True) if gardien else ""
 
-    # Terrain : fond vert avec lignes, but en haut, gardien en bas
-    return f"""
-    <div style="position:relative;width:100%;max-width:560px;margin:0 auto;
-                aspect-ratio:3/4;border-radius:12px;overflow:hidden;
-                background:linear-gradient(160deg,#1a7a3d 0%,#15833f 50%,#1a7a3d 100%);
-                border:3px solid #0d5028;">
-        <!-- Lignes du terrain -->
-        <div style="position:absolute;inset:0;">
-            <!-- Ligne médiane -->
-            <div style="position:absolute;top:50%;left:0;right:0;height:2px;
-                        background:rgba(255,255,255,0.4);"></div>
-            <!-- Cercle central -->
-            <div style="position:absolute;top:50%;left:50%;width:90px;height:90px;
-                        border:2px solid rgba(255,255,255,0.4);border-radius:50%;
-                        transform:translate(-50%,-50%);"></div>
-            <!-- Surface haute (but adverse) -->
-            <div style="position:absolute;top:0;left:50%;width:55%;height:14%;
-                        border:2px solid rgba(255,255,255,0.4);border-top:none;
-                        transform:translateX(-50%);border-radius:0 0 60px 60px;"></div>
-            <!-- Surface basse (notre but) -->
-            <div style="position:absolute;bottom:0;left:50%;width:55%;height:14%;
-                        border:2px solid rgba(255,255,255,0.4);border-bottom:none;
-                        transform:translateX(-50%);border-radius:60px 60px 0 0;"></div>
-        </div>
-        {pastilles_html}
-        {gardien_html}
-    </div>"""
+    return (
+        '<div style="position:relative;width:100%;max-width:560px;margin:0 auto;'
+        'aspect-ratio:3/4;border-radius:12px;overflow:hidden;'
+        'background:linear-gradient(160deg,#1a7a3d 0%,#15833f 50%,#1a7a3d 100%);'
+        'border:3px solid #0d5028;">'
+        '<div style="position:absolute;inset:0;">'
+        '<div style="position:absolute;top:50%;left:0;right:0;height:2px;'
+        'background:rgba(255,255,255,0.4);"></div>'
+        '<div style="position:absolute;top:50%;left:50%;width:90px;height:90px;'
+        'border:2px solid rgba(255,255,255,0.4);border-radius:50%;'
+        'transform:translate(-50%,-50%);"></div>'
+        '<div style="position:absolute;top:0;left:50%;width:55%;height:14%;'
+        'border:2px solid rgba(255,255,255,0.4);border-top:none;'
+        'transform:translateX(-50%);border-radius:0 0 60px 60px;"></div>'
+        '<div style="position:absolute;bottom:0;left:50%;width:55%;height:14%;'
+        'border:2px solid rgba(255,255,255,0.4);border-bottom:none;'
+        'transform:translateX(-50%);border-radius:60px 60px 0 0;"></div>'
+        '</div>'
+        f'{pastilles_html}{gardien_html}'
+        '</div>'
+    )
 
 
 # ============================================================================
@@ -1501,23 +1486,25 @@ elif page == "Match":
 
         def _carte_groupe(titre, liste, couleur_bord):
             if not liste:
-                return f"""
-                <div style="border:1px solid {couleur_bord};border-radius:8px;
-                            padding:12px;margin-bottom:8px;min-height:120px;">
-                    <div style="font-weight:600;color:{couleur_bord};margin-bottom:8px;">{titre}</div>
-                    <div style="color:#888;font-size:13px;">_Non renseigné_</div>
-                </div>"""
+                return (
+                    f'<div style="border:1px solid {couleur_bord};border-radius:8px;'
+                    f'padding:12px;margin-bottom:8px;min-height:120px;">'
+                    f'<div style="font-weight:600;color:{couleur_bord};margin-bottom:8px;">{titre}</div>'
+                    f'<div style="color:#888;font-size:13px;">Non renseigné</div>'
+                    f'</div>'
+                )
             lignes = "".join(
                 f'<div style="padding:3px 0;">• {j["joueur"]}'
                 f'{" — " + j["poste"] if j["poste"] else ""}</div>'
                 for j in liste
             )
-            return f"""
-            <div style="border:1px solid {couleur_bord};border-radius:8px;
-                        padding:12px;margin-bottom:8px;min-height:120px;">
-                <div style="font-weight:600;color:{couleur_bord};margin-bottom:8px;">{titre}</div>
-                {lignes}
-            </div>"""
+            return (
+                f'<div style="border:1px solid {couleur_bord};border-radius:8px;'
+                f'padding:12px;margin-bottom:8px;min-height:120px;">'
+                f'<div style="font-weight:600;color:{couleur_bord};margin-bottom:8px;">{titre}</div>'
+                f'{lignes}'
+                f'</div>'
+            )
 
         # 3 quatuors côte à côte
         c_q1, c_q2, c_q3 = st.columns(3)
