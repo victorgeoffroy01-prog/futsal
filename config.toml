@@ -1,0 +1,12 @@
+[theme]
+# Charte FFF — bleu marine / blanc / rouge + doré
+base = "dark"
+primaryColor = "#1A2B5C"          # bleu marine FFF (widgets, sélections)
+backgroundColor = "#0E1525"       # fond principal légèrement teinté bleu
+secondaryBackgroundColor = "#16203A"  # cartes, sidebar
+textColor = "#F0F3FA"
+font = "sans serif"
+
+[server]
+# Limite la taille des uploads (Mo) — ajustable
+maxUploadSize = 50

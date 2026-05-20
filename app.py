@@ -46,6 +46,17 @@ COULEUR_AMBRE    = "#EF9F27"
 COULEUR_GRIS     = "#888888"
 COULEUR_MOY      = "#EF9F27"
 
+# --- Charte FFF (nouvelle palette, ajoutée sans remplacer l'existante) ---
+FFF_MARINE       = "#1A2B5C"   # bleu marine principal
+FFF_MARINE_CLAIR = "#27406B"   # variation pour fonds de cartes
+FFF_BLEU         = "#2D5BA8"   # bleu accent
+FFF_ROUGE        = "#C8102E"   # rouge FFF (drapeau)
+FFF_DORE         = "#C9A24B"   # doré (accents, lignes, titres)
+FFF_DORE_CLAIR   = "#E3C77A"
+FFF_BLANC        = "#F0F3FA"
+FFF_FOND         = "#0E1525"
+FFF_FOND_CARTE   = "#16203A"
+
 st.set_page_config(
     page_title="EDF U19 Futsal", page_icon="⚽",
     layout="wide", initial_sidebar_state="expanded"
@@ -59,6 +70,112 @@ st.markdown("""
     h1 { font-size: 2rem !important; }
 </style>
 """, unsafe_allow_html=True)
+
+# --- Thème FFF : police Inter + accents dorés (ajout, ne remplace rien) ---
+st.markdown("""
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+    html, body, [class*="css"], .stMarkdown, .stMetric, button, input, select, textarea {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+    }
+    /* Titres avec liseré doré */
+    h1 {
+        color: #F0F3FA !important;
+        border-bottom: 3px solid #C9A24B;
+        padding-bottom: 0.3rem;
+        letter-spacing: -0.5px;
+    }
+    h2, h3 { color: #E3C77A !important; letter-spacing: -0.3px; }
+    /* Sidebar fond marine */
+    [data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #16203A 0%, #0E1525 100%);
+        border-right: 1px solid rgba(201,162,75,0.25);
+    }
+    /* Metrics : carte marine bord doré */
+    [data-testid="stMetric"] {
+        background: #16203A;
+        border: 1px solid rgba(201,162,75,0.25);
+        border-radius: 10px;
+        padding: 12px 14px;
+    }
+    [data-testid="stMetricValue"] { color: #F0F3FA !important; font-weight: 700 !important; }
+    [data-testid="stMetricLabel"] { color: #9FB0CC !important; }
+    /* Boutons primaires en marine */
+    .stButton button[kind="primary"] {
+        background: #1A2B5C; border: 1px solid #C9A24B; color: #F0F3FA;
+    }
+    .stButton button[kind="primary"]:hover {
+        background: #27406B; border-color: #E3C77A;
+    }
+    /* Tableaux : en-tête marine */
+    [data-testid="stDataFrame"] thead tr th {
+        background: #1A2B5C !important; color: #E3C77A !important;
+    }
+    /* Onglets / radios actifs en doré */
+    [data-baseweb="radio"] [aria-checked="true"] div:first-child {
+        border-color: #C9A24B !important;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+
+def en_tete_fff(titre, sous_titre=None):
+    """Bandeau d'en-tête FFF : barre tricolore + doré, logo, titre. Style 'club pro'."""
+    logo_html = ""
+    if LOGO_PATH.exists():
+        try:
+            ext = LOGO_PATH.suffix.lower().lstrip(".")
+            mime = "webp" if ext == "webp" else ("jpeg" if ext in ("jpg", "jpeg") else ext)
+            with open(LOGO_PATH, "rb") as f:
+                b64 = base64.b64encode(f.read()).decode("utf-8")
+            logo_html = (f'<img src="data:image/{mime};base64,{b64}" '
+                         f'style="height:54px;width:auto;margin-right:16px;" />')
+        except Exception:
+            logo_html = ""
+    sous = (f'<div style="font-size:13px;color:#9FB0CC;margin-top:2px;">{sous_titre}</div>'
+            if sous_titre else "")
+    return st.markdown(
+        f'<div style="display:flex;align-items:center;gap:4px;padding:14px 18px;margin-bottom:10px;'
+        f'background:linear-gradient(135deg,#1A2B5C 0%,#27406B 100%);border-radius:12px;'
+        f'border:1px solid rgba(201,162,75,0.35);'
+        f'box-shadow:0 0 0 1px rgba(0,0,0,0.2),0 4px 14px rgba(0,0,0,0.35);'
+        f'position:relative;overflow:hidden;">'
+        # barre tricolore + doré sur le bord gauche
+        f'<div style="position:absolute;left:0;top:0;bottom:0;width:6px;'
+        f'background:linear-gradient(180deg,#1A2B5C 0%,#1A2B5C 33%,#F0F3FA 33%,#F0F3FA 66%,'
+        f'#C8102E 66%,#C8102E 100%);"></div>'
+        f'{logo_html}'
+        f'<div style="margin-left:6px;">'
+        f'<div style="font-size:22px;font-weight:800;color:#F0F3FA;letter-spacing:-0.5px;">{titre}</div>'
+        f'{sous}'
+        f'</div>'
+        f'<div style="margin-left:auto;font-size:11px;font-weight:600;color:#C9A24B;'
+        f'letter-spacing:1px;text-transform:uppercase;">FFF</div>'
+        f'</div>',
+        unsafe_allow_html=True
+    )
+
+
+def carte(titre, contenu_html, couleur_accent=None, icone=""):
+    """
+    Composant carte FFF réutilisable (disponible, non branché aux pages existantes).
+    titre : titre de la carte (str)
+    contenu_html : HTML interne (str)
+    couleur_accent : couleur du liseré gauche (défaut = doré FFF)
+    icone : emoji ou texte court affiché avant le titre
+    """
+    accent = couleur_accent or FFF_DORE
+    icone_html = f'{icone} ' if icone else ""
+    return (
+        f'<div style="background:{FFF_FOND_CARTE};border-radius:12px;padding:16px 18px;'
+        f'margin-bottom:12px;border:1px solid rgba(201,162,75,0.2);'
+        f'border-left:4px solid {accent};box-shadow:0 2px 8px rgba(0,0,0,0.25);">'
+        f'<div style="font-size:14px;font-weight:700;color:{FFF_DORE_CLAIR};'
+        f'margin-bottom:10px;letter-spacing:0.2px;">{icone_html}{titre}</div>'
+        f'<div style="color:{FFF_BLANC};font-size:14px;line-height:1.5;">{contenu_html}</div>'
+        f'</div>'
+    )
 
 
 def normaliser_nom(nom):
@@ -1098,6 +1215,9 @@ perfs_mode = appliquer_mode(perfs_raw, mode) if match_id_filtre else perfs_raw
 # ============================================================================
 
 if page == "Accueil":
+    en_tete_fff("Tableau de bord — EDF U19 Futsal",
+                f"{equipe['categorie']} · Saison {equipe['saison']}")
+
     col_logo, col_titre = st.columns([1, 5])
     with col_logo:
         if LOGO_PATH.exists():
