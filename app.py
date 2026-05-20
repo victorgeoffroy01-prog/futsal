@@ -219,58 +219,64 @@ def photo_base64(nom):
 
 def positions_losange(joueurs):
     """
-    Place les joueurs d'un quatuor sur un losange selon leur poste.
-    Renvoie une liste de (joueur_dict, x%, y%) — coordonnées en % du terrain
-    (0,0 = haut gauche ; 100,100 = bas droite ; le but adverse est en haut).
+    Place les joueurs d'un quatuor sur un losange : Pivot (haut), 2 Ailiers (côtés),
+    Meneur (bas). Un seul joueur par position, jamais deux au même endroit.
 
-    Losange idéal : Pivot (haut), 2 Ailiers (côtés), Meneur (bas).
-    Adaptation si surnombre : on remplit les positions libres dans l'ordre.
+    Ordre de résolution (un joueur placé n'est plus disponible) :
+      1. Pivot   : pivot > meneur
+      2. Meneur  : meneur > meneur côté > ailier
+      3. Ailiers : ailier > meneur côté > meneur
+      4. Reste   : positions encore vides remplies dans l'ordre.
     """
-    # Positions cibles du losange (x, y en %)
-    POS_PIVOT = (50, 18)
-    POS_AIL_G = (20, 45)
-    POS_AIL_D = (80, 45)
-    POS_MENEUR = (50, 72)
-    # Positions de secours si débordement
-    SECOURS = [(35, 30), (65, 30), (35, 60), (65, 60), (50, 45)]
+    POS = {
+        "pivot":   (50, 16),
+        "ailier_g": (18, 46),
+        "ailier_d": (82, 46),
+        "meneur":  (50, 74),
+    }
 
-    def categorie(poste):
+    def cat(poste):
         p = (poste or "").lower()
         if "pivot" in p:
             return "pivot"
         if "ailier" in p:
             return "ailier"
+        if "meneur" in p and ("côté" in p or "cote" in p):
+            return "meneur_cote"
         if "meneur" in p:
             return "meneur"
         return "autre"
 
-    pivots = [j for j in joueurs if categorie(j["poste"]) == "pivot"]
-    ailiers = [j for j in joueurs if categorie(j["poste"]) == "ailier"]
-    meneurs = [j for j in joueurs if categorie(j["poste"]) == "meneur"]
-    autres = [j for j in joueurs if categorie(j["poste"]) == "autre"]
+    dispo = list(joueurs)
+
+    def prendre(priorites):
+        """Retire et renvoie le 1er joueur dispo correspondant à l'ordre de priorité."""
+        for categorie_voulue in priorites:
+            for j in dispo:
+                if cat(j["poste"]) == categorie_voulue:
+                    dispo.remove(j)
+                    return j
+        return None
+
+    affect = {}
+    # 1. Pivot
+    affect["pivot"] = prendre(["pivot", "meneur", "meneur_cote"])
+    # 2. Meneur
+    affect["meneur"] = prendre(["meneur", "meneur_cote", "ailier"])
+    # 3. Ailiers
+    affect["ailier_g"] = prendre(["ailier", "meneur_cote", "meneur"])
+    affect["ailier_d"] = prendre(["ailier", "meneur_cote", "meneur"])
+
+    # 4. Reste : remplir les positions vides avec les joueurs restants
+    for pos in ["pivot", "meneur", "ailier_g", "ailier_d"]:
+        if affect[pos] is None and dispo:
+            affect[pos] = dispo.pop(0)
 
     placements = []
-    slots_pivot = [POS_PIVOT, (35, 18), (65, 18)]
-    slots_ailier = [POS_AIL_G, POS_AIL_D, (15, 30), (85, 30)]
-    slots_meneur = [POS_MENEUR, (35, 72), (65, 72)]
-
-    secours_iter = iter(SECOURS)
-
-    def placer(liste, slots):
-        for i, j in enumerate(liste):
-            if i < len(slots):
-                placements.append((j, *slots[i]))
-            else:
-                try:
-                    placements.append((j, *next(secours_iter)))
-                except StopIteration:
-                    placements.append((j, 50, 45))
-
-    placer(pivots, slots_pivot)
-    placer(ailiers, slots_ailier)
-    placer(meneurs, slots_meneur)
-    placer(autres, list(secours_iter))
-
+    for pos, j in affect.items():
+        if j is not None:
+            x, y = POS[pos]
+            placements.append((j, x, y))
     return placements
 
 
@@ -294,15 +300,15 @@ def rendu_terrain_futsal(joueurs_quatuor, gardien):
             initiales = "".join([m[0] for m in nom_court.replace(".", "").split()[:2]]).upper()
             contenu = (f'<div style="width:100%;height:100%;border-radius:50%;'
                        f'background:#1c2733;display:flex;align-items:center;justify-content:center;'
-                       f'color:#fff;font-weight:700;font-size:18px;">{initiales}</div>')
+                       f'color:#fff;font-weight:700;font-size:28px;">{initiales}</div>')
         return (
             f'<div style="position:absolute;left:{x}%;top:{y}%;transform:translate(-50%,-50%);'
-            f'text-align:center;width:90px;">'
-            f'<div style="width:58px;height:58px;border-radius:50%;border:3px solid {bordure};'
-            f'margin:0 auto;overflow:hidden;box-shadow:0 2px 6px rgba(0,0,0,0.5);'
+            f'text-align:center;width:130px;">'
+            f'<div style="width:86px;height:86px;border-radius:50%;border:4px solid {bordure};'
+            f'margin:0 auto;overflow:hidden;box-shadow:0 3px 8px rgba(0,0,0,0.6);'
             f'background:#0d1117;">{contenu}</div>'
-            f'<div style="margin-top:4px;font-size:11px;font-weight:600;color:#fff;'
-            f'text-shadow:0 1px 3px rgba(0,0,0,0.9);white-space:nowrap;">{nom_court}</div>'
+            f'<div style="margin-top:6px;font-size:13px;font-weight:700;color:#fff;'
+            f'text-shadow:0 1px 4px rgba(0,0,0,1);white-space:nowrap;">{nom_court}</div>'
             f'</div>'
         )
 
@@ -310,7 +316,7 @@ def rendu_terrain_futsal(joueurs_quatuor, gardien):
     gardien_html = pastille(gardien, 50, 90, est_gardien=True) if gardien else ""
 
     return (
-        '<div style="position:relative;width:100%;max-width:560px;margin:0 auto;'
+        '<div style="position:relative;width:100%;max-width:620px;margin:0 auto;'
         'aspect-ratio:3/4;border-radius:12px;overflow:hidden;'
         'background:linear-gradient(160deg,#1a7a3d 0%,#15833f 50%,#1a7a3d 100%);'
         'border:3px solid #0d5028;">'
