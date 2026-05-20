@@ -230,8 +230,8 @@ def positions_losange(joueurs):
     """
     POS = {
         "pivot":   (50, 16),
-        "ailier_g": (18, 46),
-        "ailier_d": (82, 46),
+        "ailier_g": (25, 46),
+        "ailier_d": (75, 46),
         "meneur":  (50, 74),
     }
 
@@ -300,14 +300,14 @@ def rendu_terrain_futsal(joueurs_quatuor, gardien):
             initiales = "".join([m[0] for m in nom_court.replace(".", "").split()[:2]]).upper()
             contenu = (f'<div style="width:100%;height:100%;border-radius:50%;'
                        f'background:#1c2733;display:flex;align-items:center;justify-content:center;'
-                       f'color:#fff;font-weight:700;font-size:28px;">{initiales}</div>')
+                       f'color:#fff;font-weight:700;font-size:48px;">{initiales}</div>')
         return (
             f'<div style="position:absolute;left:{x}%;top:{y}%;transform:translate(-50%,-50%);'
-            f'text-align:center;width:130px;">'
-            f'<div style="width:86px;height:86px;border-radius:50%;border:4px solid {bordure};'
-            f'margin:0 auto;overflow:hidden;box-shadow:0 3px 8px rgba(0,0,0,0.6);'
+            f'text-align:center;width:180px;">'
+            f'<div style="width:150px;height:150px;border-radius:50%;border:5px solid {bordure};'
+            f'margin:0 auto;overflow:hidden;box-shadow:0 4px 10px rgba(0,0,0,0.6);'
             f'background:#0d1117;">{contenu}</div>'
-            f'<div style="margin-top:6px;font-size:13px;font-weight:700;color:#fff;'
+            f'<div style="margin-top:7px;font-size:16px;font-weight:700;color:#fff;'
             f'text-shadow:0 1px 4px rgba(0,0,0,1);white-space:nowrap;">{nom_court}</div>'
             f'</div>'
         )
@@ -316,7 +316,7 @@ def rendu_terrain_futsal(joueurs_quatuor, gardien):
     gardien_html = pastille(gardien, 50, 90, est_gardien=True) if gardien else ""
 
     return (
-        '<div style="position:relative;width:100%;max-width:620px;margin:0 auto;'
+        '<div style="position:relative;width:100%;max-width:680px;margin:0 auto;'
         'aspect-ratio:3/4;border-radius:12px;overflow:hidden;'
         'background:linear-gradient(160deg,#1a7a3d 0%,#15833f 50%,#1a7a3d 100%);'
         'border:3px solid #0d5028;">'
