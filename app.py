@@ -337,13 +337,14 @@ def barres_horizontales_comparaison(labels, val_joueur, val_moyenne,
 
 def radar_normalise(valeurs_joueur, valeurs_ref, libelles, nom_joueur="Joueur",
                     nom_ref="Moy. équipe",
-                    couleur_joueur=COULEUR_BLEU, couleur_ref=COULEUR_MOY):
+                    couleur_joueur=COULEUR_BLEU, couleur_ref=COULEUR_MOY,
+                    decimales=1):
     n = len(libelles)
     maxes = [max(abs(valeurs_joueur[i] or 0), abs(valeurs_ref[i] or 0), 0.001) for i in range(n)]
     v_j_norm = [(valeurs_joueur[i] or 0) / maxes[i] for i in range(n)]
     v_r_norm = [(valeurs_ref[i] or 0) / maxes[i] for i in range(n)]
     labels_enrichis = [
-        f"{libelles[i]}<br>(J: {valeurs_joueur[i]:.1f} / M: {valeurs_ref[i]:.1f})"
+        f"{libelles[i]}<br>(J: {valeurs_joueur[i]:.{decimales}f} / M: {valeurs_ref[i]:.{decimales}f})"
         for i in range(n)
     ]
     fig = go.Figure()
@@ -380,7 +381,8 @@ def radar_normalise(valeurs_joueur, valeurs_ref, libelles, nom_joueur="Joueur",
 
 
 def radar_comparaison_2joueurs(stats1, stats2, nom1, nom2,
-                                couleur1=COULEUR_PRIMAIRE, couleur2=COULEUR_BLEU):
+                                couleur1=COULEUR_PRIMAIRE, couleur2=COULEUR_BLEU,
+                                decimales=1):
     libelles = list(stats1.keys())
     v1 = [stats1[k] or 0 for k in libelles]
     v2 = [stats2[k] or 0 for k in libelles]
@@ -389,7 +391,7 @@ def radar_comparaison_2joueurs(stats1, stats2, nom1, nom2,
     v1n = [v1[i] / maxes[i] for i in range(n)]
     v2n = [v2[i] / maxes[i] for i in range(n)]
     labels_enrichis = [
-        f"{libelles[i]}<br>({nom1[:8]}: {v1[i]:.1f} / {nom2[:8]}: {v2[i]:.1f})"
+        f"{libelles[i]}<br>({nom1[:8]}: {v1[i]:.{decimales}f} / {nom2[:8]}: {v2[i]:.{decimales}f})"
         for i in range(n)
     ]
     fig = go.Figure()
@@ -1448,16 +1450,26 @@ elif page == "Fiche joueur":
     val_j = [agg_j_mode[col] if pd.notna(agg_j_mode[col]) else 0 for _, col in indicateurs_comp]
     val_m = [moy_equipe[col] if pd.notna(moy_equipe.get(col)) else 0 for _, col in indicateurs_comp]
 
+    # Décimales adaptées au mode (valeurs très petites en Par minute)
+    if mode_comp == "Stats brutes":
+        dec_comp = 1
+    elif mode_comp == "Par minute":
+        dec_comp = 3
+    else:  # Per 40 min
+        dec_comp = 2
+
     col_bar, col_rad = st.columns([1.1, 1])
     with col_bar:
         fig_bar = barres_horizontales_comparaison(
-            labels_c, val_j, val_m, nom_joueur=joueur_sel, nom_ref="Moy. Équipe"
+            labels_c, val_j, val_m, nom_joueur=joueur_sel, nom_ref="Moy. Équipe",
+            decimales=dec_comp
         )
         st.plotly_chart(fig_bar, use_container_width=True)
     with col_rad:
         st.markdown("**Radar profil (échelle normalisée par axe)**")
         fig_rad = radar_normalise(val_j, val_m, labels_c,
-                                  nom_joueur=joueur_sel, nom_ref="Moy. équipe")
+                                  nom_joueur=joueur_sel, nom_ref="Moy. équipe",
+                                  decimales=dec_comp)
         st.plotly_chart(fig_rad, use_container_width=True)
 
     if match_id_filtre is None and len(df_j_brut) > 1:
@@ -1687,7 +1699,8 @@ elif page == "Comparaison":
     }
     st.plotly_chart(
         radar_comparaison_2joueurs(radar_s1, radar_s2, j1, j2,
-                                    couleur1=COULEUR_PRIMAIRE, couleur2=COULEUR_BLEU),
+                                    couleur1=COULEUR_PRIMAIRE, couleur2=COULEUR_BLEU,
+                                    decimales=decimales if decimales > 0 else 1),
         use_container_width=True
     )
 
