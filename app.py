@@ -1194,18 +1194,80 @@ with st.sidebar:
     )
 
     st.markdown("---")
-    st.markdown("**Filtres globaux**")
-    portee = st.selectbox("Portée", ["Tous les matchs"] + matchs["libelle"].tolist())
-    mode = st.selectbox("Mode", ["Stats brutes", "Par minute", "Per 40 min"])
-
-    st.markdown("---")
     st.caption(f"{len(matchs)} matchs · {charger('SELECT COUNT(*) AS n FROM joueur').iloc[0]['n']} joueurs")
 
 
+# Valeurs par défaut (mémorisées entre pages via session_state)
+if "portee_globale" not in st.session_state:
+    st.session_state["portee_globale"] = "Tous les matchs"
+if "mode_global" not in st.session_state:
+    st.session_state["mode_global"] = "Stats brutes"
+
+
+def filtres_page(avec_mode=True, avec_portee=True, key_suffix=""):
+    """
+    Affiche les filtres Portée/Mode en haut de la page courante, dans une barre dédiée.
+    Le choix est mémorisé entre les pages (session_state).
+    Renvoie (portee, mode, match_id_filtre, perfs_raw, perfs_mode).
+    """
+    options_portee = ["Tous les matchs"] + matchs["libelle"].tolist()
+    options_mode = ["Stats brutes", "Par minute", "Per 40 min"]
+
+    # On borne les valeurs mémorisées (au cas où un match aurait disparu)
+    portee_def = st.session_state["portee_globale"]
+    if portee_def not in options_portee:
+        portee_def = "Tous les matchs"
+    mode_def = st.session_state["mode_global"]
+    if mode_def not in options_mode:
+        mode_def = "Stats brutes"
+
+    portee_loc = portee_def
+    mode_loc = mode_def
+
+    # Mise en page : barre de filtres compacte en haut, alignée à gauche
+    if avec_portee and avec_mode:
+        c1, c2, _ = st.columns([2, 2, 3])
+        with c1:
+            portee_loc = st.selectbox("📂 Portée", options_portee,
+                                      index=options_portee.index(portee_def),
+                                      key=f"portee_{key_suffix}")
+        with c2:
+            mode_loc = st.selectbox("📊 Mode", options_mode,
+                                    index=options_mode.index(mode_def),
+                                    key=f"mode_{key_suffix}",
+                                    help="Brutes = totaux. Par minute = stat/min. Per 40 = extrapolation sur un match complet.")
+    elif avec_portee:
+        c1, _ = st.columns([2, 5])
+        with c1:
+            portee_loc = st.selectbox("📂 Portée", options_portee,
+                                      index=options_portee.index(portee_def),
+                                      key=f"portee_{key_suffix}")
+    elif avec_mode:
+        c1, _ = st.columns([2, 5])
+        with c1:
+            mode_loc = st.selectbox("📊 Mode", options_mode,
+                                    index=options_mode.index(mode_def),
+                                    key=f"mode_{key_suffix}",
+                                    help="Brutes = totaux. Par minute = stat/min. Per 40 = extrapolation sur un match complet.")
+
+    # Mémorisation pour la prochaine page
+    st.session_state["portee_globale"] = portee_loc
+    st.session_state["mode_global"] = mode_loc
+
+    mid = None
+    if portee_loc != "Tous les matchs":
+        mid = int(matchs.loc[matchs["libelle"] == portee_loc, "match_id"].iloc[0])
+    p_raw = get_perfs(mid)
+    p_mode = appliquer_mode(p_raw, mode_loc) if mid else p_raw
+    return portee_loc, mode_loc, mid, p_raw, p_mode
+
+
+# Valeurs par défaut globales pour les pages SANS filtre (évite les NameError)
+portee = st.session_state["portee_globale"]
+mode = st.session_state["mode_global"]
 match_id_filtre = None
 if portee != "Tous les matchs":
     match_id_filtre = int(matchs.loc[matchs["libelle"] == portee, "match_id"].iloc[0])
-
 perfs_raw = get_perfs(match_id_filtre)
 perfs_mode = appliquer_mode(perfs_raw, mode) if match_id_filtre else perfs_raw
 
@@ -1346,7 +1408,8 @@ if page == "Accueil":
 
 elif page == "Vue équipe":
     st.title("Vue équipe")
-    st.caption(f"Portée : {portee} · Mode : {mode}")
+    portee, mode, match_id_filtre, perfs_raw, perfs_mode = filtres_page(key_suffix="vue_equipe")
+    st.markdown("---")
 
     if match_id_filtre is None:
         bilan = charger("SELECT * FROM v_equipe_bilan").iloc[0]
@@ -1766,7 +1829,8 @@ elif page == "Match":
 
 elif page == "Fiche joueur":
     st.title("Fiche joueur")
-    st.caption(f"Portée : {portee} · Mode : {mode}")
+    portee, mode, match_id_filtre, perfs_raw, perfs_mode = filtres_page(key_suffix="fiche_joueur")
+    st.markdown("---")
 
     joueurs_dispo = sorted(perfs_mode[perfs_mode["role"] != "Gardien"]["joueur"].unique())
     if len(joueurs_dispo) == 0:
@@ -2020,6 +2084,9 @@ elif page == "Fiche joueur":
 
 elif page == "Comparaison":
     st.title("Comparaison de joueurs")
+    portee, mode, match_id_filtre, perfs_raw, perfs_mode = filtres_page(
+        avec_mode=False, key_suffix="comparaison")
+    st.markdown("---")
 
     joueurs_dispo = sorted(perfs_raw[perfs_raw["role"] != "Gardien"]["joueur"].unique())
     if len(joueurs_dispo) < 2:
@@ -2158,7 +2225,8 @@ elif page == "Comparaison":
 
 elif page == "Gardiens":
     st.title("Gardiens")
-    st.caption(f"Portée : {portee} · Mode : {mode}")
+    portee, mode, match_id_filtre, perfs_raw, perfs_mode = filtres_page(key_suffix="gardiens")
+    st.markdown("---")
 
     gks = perfs_mode[perfs_mode["role"] == "Gardien"].copy()
     gks_brut = perfs_raw[perfs_raw["role"] == "Gardien"].copy()
@@ -2635,19 +2703,56 @@ elif page == "Notation":
         classement_disp["min_total"] = classement_disp["min_total"].round(1)
         classement_disp.columns = ["Joueur", "Matchs", "Note moy.", "Note min", "Note max", "Min joués"]
         st.dataframe(classement_disp, hide_index=True, use_container_width=True)
-        top10 = classement.head(10)
+        top10 = classement.head(10).copy().reset_index(drop=True)
+
+        # Alerte échantillon faible : notes basées sur peu de matchs = peu fiables
+        nb_faible = int((top10["matchs"] < 2).sum())
+        if nb_faible > 0:
+            st.warning(
+                f"⚠️ {nb_faible} joueur(s) du top n'ont qu'**1 match** : leur note moyenne "
+                f"est peu fiable (ex : 20/20 sur un seul match). À interpréter avec prudence."
+            )
+
+        # Couleurs podium : or, argent, bronze, puis dégradé marine→doré
+        MEDAILLES = ["#D4AF37", "#B8C0CC", "#CD7F32"]  # or / argent / bronze
+        couleurs = []
+        for i, row in top10.iterrows():
+            if i < 3:
+                couleurs.append(MEDAILLES[i])
+            else:
+                couleurs.append(FFF_MARINE_CLAIR if row["matchs"] < 2 else FFF_BLEU)
+
+        # Labels Y : médaille pour top 3, sinon rang
+        labels_y = []
+        for i, row in top10.iterrows():
+            prefixe = ["🥇", "🥈", "🥉"][i] if i < 3 else f"{i+1}."
+            suffixe = " ⚠️" if row["matchs"] < 2 else ""
+            labels_y.append(f"{prefixe} {row['joueur']}{suffixe}")
+
+        # Texte de barre : note + nb matchs
+        textes = [f"  {row['note_moy']:.1f}  ({int(row['matchs'])} m)"
+                  for _, row in top10.iterrows()]
+
         fig = go.Figure(go.Bar(
-            x=top10["note_moy"], y=top10["joueur"], orientation='h',
-            marker=dict(color=COULEUR_PRIMAIRE),
-            text=top10["note_moy"].round(2), textposition="outside"))
+            x=top10["note_moy"], y=labels_y, orientation='h',
+            marker=dict(color=couleurs,
+                        line=dict(color="rgba(201,162,75,0.4)", width=1)),
+            text=textes, textposition="outside",
+            textfont=dict(size=13, color="#F0F3FA"),
+            cliponaxis=False,
+            hovertemplate="%{y}<br>Note : %{x:.2f}<extra></extra>"
+        ))
         fig.update_layout(
-            title="Top 10 — note moyenne",
-            height=400, margin=dict(l=10, r=40, t=50, b=20),
-            xaxis=dict(showgrid=True, gridcolor="rgba(128,128,128,0.2)", range=[0, 22]),
-            yaxis=dict(autorange="reversed", automargin=True),
+            title=dict(text="🏆 Classement — note moyenne", font=dict(size=18, color="#E3C77A")),
+            height=460, margin=dict(l=10, r=70, t=60, b=30),
+            xaxis=dict(showgrid=True, gridcolor="rgba(128,128,128,0.15)",
+                       range=[0, 22], title="Note / 20", zeroline=False),
+            yaxis=dict(autorange="reversed", automargin=True, tickfont=dict(size=13)),
             plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-            showlegend=False)
+            showlegend=False, bargap=0.35
+        )
         st.plotly_chart(fig, use_container_width=True)
+        st.caption("🥇🥈🥉 podium · ⚠️ note basée sur un seul match (peu fiable)")
 
 
 # ============================================================================
