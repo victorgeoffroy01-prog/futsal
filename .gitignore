@@ -1,0 +1,24 @@
+# Mot de passe local pour la page Compositions
+# JAMAIS commité — chaque utilisateur a le sien en local
+secrets.txt
+
+# Base SQLite (commitée si tu veux versionner les données, sinon ignorée)
+# Décommente la ligne suivante si tu ne veux pas commiter la base :
+# futsal.db
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+.pytest_cache/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp

@@ -118,6 +118,90 @@ def get_parametres():
 
 
 # ============================================================================
+# COMPOSITIONS — helpers
+# ============================================================================
+
+TYPES_COMPO = ["quatuor1", "quatuor2", "quatuor3", "remplacant",
+               "gardien_titulaire", "gardien_remplacant"]
+
+LIBELLES_COMPO = {
+    "quatuor1": "Quatuor 1", "quatuor2": "Quatuor 2", "quatuor3": "Quatuor 3",
+    "remplacant": "Remplaçants", "gardien_titulaire": "Gardien titulaire",
+    "gardien_remplacant": "Gardien remplaçant",
+}
+
+
+def composition_table_exists():
+    """Renvoie True si la table composition_match existe (script add_compositions.py lancé)."""
+    with sqlite3.connect(DB_PATH) as conn:
+        cur = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='composition_match'"
+        )
+        return cur.fetchone() is not None
+
+
+def get_compo_match(match_id):
+    """Renvoie la compo d'un match sous forme de dict {type_compo: [joueur_id, ...]}."""
+    if not composition_table_exists():
+        return {t: [] for t in TYPES_COMPO}
+    with sqlite3.connect(DB_PATH) as conn:
+        df = pd.read_sql_query(
+            """SELECT c.joueur_id, c.type_compo, j.nom AS joueur, j.poste, j.numero
+               FROM composition_match c
+               JOIN joueur j ON j.joueur_id = c.joueur_id
+               WHERE c.match_id = ?
+               ORDER BY c.type_compo, j.nom""",
+            conn, params=(match_id,)
+        )
+    res = {t: [] for t in TYPES_COMPO}
+    for _, r in df.iterrows():
+        res[r["type_compo"]].append({
+            "joueur_id": int(r["joueur_id"]),
+            "joueur": normaliser_nom(r["joueur"]),
+            "poste": r["poste"],
+            "numero": r["numero"],
+        })
+    return res
+
+
+def enregistrer_compo(match_id, affectation):
+    """
+    Enregistre une compo (remplace celle existante pour ce match).
+    affectation : dict {joueur_id: type_compo} avec type_compo dans TYPES_COMPO ou None.
+    """
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("DELETE FROM composition_match WHERE match_id = ?", (match_id,))
+        for jid, type_c in affectation.items():
+            if type_c in TYPES_COMPO:
+                conn.execute(
+                    "INSERT INTO composition_match(match_id, joueur_id, type_compo) "
+                    "VALUES (?, ?, ?)", (match_id, int(jid), type_c)
+                )
+        conn.commit()
+    # Invalide le cache pour que les changements soient visibles
+    charger.clear()
+
+
+# --- Authentification (mot de passe local) ---
+
+def lire_mdp_local():
+    """Lit le mot de passe depuis secrets.txt. Renvoie None si le fichier n'existe pas."""
+    p = Path("secrets.txt")
+    if not p.exists():
+        return None
+    try:
+        contenu = p.read_text(encoding="utf-8").strip()
+        return contenu if contenu else None
+    except Exception:
+        return None
+
+
+def page_compo_deverrouillee():
+    """Renvoie True si l'utilisateur a saisi le bon mot de passe dans la session."""
+    return st.session_state.get("compo_auth_ok", False)
+
+
+# ============================================================================
 # CALCULS
 # ============================================================================
 
@@ -840,11 +924,18 @@ with st.sidebar:
     st.caption(f"{equipe['categorie']} · Saison {equipe['saison']}")
 
     st.markdown("---")
+    # Pages de base
+    pages_dispo = ["Accueil", "Vue équipe", "Match", "Fiche joueur", "Comparaison",
+                   "Gardiens", "Évolution", "Tendance forme", "Notation",
+                   "Calendrier"]
+    # Page Compositions visible uniquement si secrets.txt existe en local
+    if Path("secrets.txt").exists():
+        pages_dispo.append("Compositions")
+    pages_dispo.append("Légende")
+
     page = st.radio(
         "Navigation",
-        ["Accueil", "Vue équipe", "Match", "Fiche joueur", "Comparaison",
-         "Gardiens", "Évolution", "Tendance forme", "Notation",
-         "Calendrier", "Légende"],
+        pages_dispo,
         label_visibility="collapsed"
     )
 
@@ -1254,6 +1345,63 @@ elif page == "Match":
         compo.sort_values("Min", ascending=False),
         hide_index=True, use_container_width=True
     )
+
+    # ===== Composition du match =====
+    compo = get_compo_match(m_id)
+    a_compo = any(len(compo[t]) > 0 for t in TYPES_COMPO)
+    if a_compo:
+        st.markdown("---")
+        st.subheader("👥 Composition")
+
+        def _carte_groupe(titre, liste, couleur_bord):
+            if not liste:
+                return f"""
+                <div style="border:1px solid {couleur_bord};border-radius:8px;
+                            padding:12px;margin-bottom:8px;min-height:120px;">
+                    <div style="font-weight:600;color:{couleur_bord};margin-bottom:8px;">{titre}</div>
+                    <div style="color:#888;font-size:13px;">_Non renseigné_</div>
+                </div>"""
+            lignes = "".join(
+                f'<div style="padding:3px 0;">• {j["joueur"]}'
+                f'{" — " + j["poste"] if j["poste"] else ""}</div>'
+                for j in liste
+            )
+            return f"""
+            <div style="border:1px solid {couleur_bord};border-radius:8px;
+                        padding:12px;margin-bottom:8px;min-height:120px;">
+                <div style="font-weight:600;color:{couleur_bord};margin-bottom:8px;">{titre}</div>
+                {lignes}
+            </div>"""
+
+        # 3 quatuors côte à côte
+        c_q1, c_q2, c_q3 = st.columns(3)
+        with c_q1:
+            st.markdown(_carte_groupe(f"Quatuor 1 ({len(compo['quatuor1'])}/4)",
+                                       compo["quatuor1"], "#3FB950"),
+                        unsafe_allow_html=True)
+        with c_q2:
+            st.markdown(_carte_groupe(f"Quatuor 2 ({len(compo['quatuor2'])}/4)",
+                                       compo["quatuor2"], "#185FA5"),
+                        unsafe_allow_html=True)
+        with c_q3:
+            st.markdown(_carte_groupe(f"Quatuor 3 ({len(compo['quatuor3'])}/4)",
+                                       compo["quatuor3"], "#D29922"),
+                        unsafe_allow_html=True)
+
+        # Remplaçants + gardiens en ligne
+        c_r, c_gt, c_gr = st.columns([2, 1, 1])
+        with c_r:
+            st.markdown(_carte_groupe(f"Remplaçants ({len(compo['remplacant'])})",
+                                       compo["remplacant"], "#8B949E"),
+                        unsafe_allow_html=True)
+        with c_gt:
+            st.markdown(_carte_groupe("Gardien titulaire",
+                                       compo["gardien_titulaire"], "#FF4B4B"),
+                        unsafe_allow_html=True)
+        with c_gr:
+            st.markdown(_carte_groupe("Gardien remplaçant",
+                                       compo["gardien_remplacant"], "#8B949E"),
+                        unsafe_allow_html=True)
 
     # ===== Faits marquants =====
     st.markdown("---")
@@ -1907,15 +2055,34 @@ elif page == "Évolution":
 
 elif page == "Tendance forme":
     st.title("Tendance de forme")
-    st.caption("On compare les N derniers matchs d'un joueur aux N matchs précédents")
+    st.caption("On compare les N derniers matchs d'un joueur aux N matchs précédents.")
 
-    # Sélecteurs
+    # ===== Bandeau contextuel : combien de matchs sont dispo, quelles fenêtres possibles =====
+    perfs_all = get_perfs()
+    perfs_jc = perfs_all[perfs_all["role"] != "Gardien"].copy()
+    nb_matchs_par_joueur = perfs_jc.groupby("joueur")["match_id"].nunique()
+    max_matchs_joueur = int(nb_matchs_par_joueur.max()) if not nb_matchs_par_joueur.empty else 0
+
+    # Fenêtres possibles = celles où au moins 1 joueur a 2*N matchs
+    fenetres_possibles = [n for n in [2, 3, 5] if 2 * n <= max_matchs_joueur]
+
+    if max_matchs_joueur < 4:
+        st.info(
+            f"ℹ️ Joueur le plus utilisé : **{max_matchs_joueur} matchs** joués. "
+            f"Il faut au moins **4 matchs** pour comparer 2 derniers vs 2 précédents. "
+            f"Reviens quand tu auras plus de données."
+        )
+        st.stop()
+
+    # ===== Sélecteurs =====
     col_s1, col_s2 = st.columns(2)
     with col_s1:
-        fenetre = st.selectbox("Fenêtre de comparaison",
-                                [2, 3, 5],
-                                index=1,
-                                format_func=lambda n: f"{n} derniers vs {n} précédents")
+        fenetre = st.selectbox(
+            "Fenêtre de comparaison",
+            fenetres_possibles,
+            index=len(fenetres_possibles) - 1,  # la plus grande possible par défaut
+            format_func=lambda n: f"{n} derniers vs {n} précédents (≥ {2*n} matchs joués)"
+        )
     with col_s2:
         indicateurs_tf = {
             "Note Brute": "note",
@@ -1931,13 +2098,17 @@ elif page == "Tendance forme":
         ind_tf_label = st.selectbox("Indicateur", list(indicateurs_tf.keys()))
 
     col_ind = indicateurs_tf[ind_tf_label]
-    min_matchs_requis = 2 * fenetre  # N + N
+    min_matchs_requis = 2 * fenetre
 
-    # Construire les données
+    st.caption(
+        f"🔍 Tu as **{len(get_matchs())} matchs** en base. "
+        f"Comparaison : moyenne sur les **{fenetre} derniers** matchs joués vs "
+        f"les **{fenetre} précédents**. Il faut donc **{min_matchs_requis} matchs joués** "
+        f"minimum par joueur."
+    )
+
+    # ===== Calcul =====
     notes_df = calculer_toutes_notes() if col_ind == "note" else None
-    perfs_all = get_perfs()
-    perfs_jc = perfs_all[perfs_all["role"] != "Gardien"].copy()
-
     joueurs_uniques = sorted(perfs_jc["joueur"].unique())
     rows = []
     for j in joueurs_uniques:
@@ -1956,7 +2127,6 @@ elif page == "Tendance forme":
             valeurs_all = df_jp[col_ind].tolist()
 
         n_total = len(valeurs_all)
-        # On ne peut comparer que si on a au moins 2N matchs
         if n_total < min_matchs_requis:
             rows.append({
                 "joueur": j, "n_matchs": n_total,
@@ -1966,24 +2136,25 @@ elif page == "Tendance forme":
             })
             continue
 
-        # N derniers vs N précédents
         recent = valeurs_all[-fenetre:]
         precedent = valeurs_all[-2*fenetre:-fenetre]
         moy_recent = sum(recent) / len(recent)
         moy_precedent = sum(precedent) / len(precedent)
         diff = moy_recent - moy_precedent
 
-        # Tendance : seuil 5% de la moyenne précédente, minimum 0.1
         seuil = max(0.05 * abs(moy_precedent), 0.1)
         if abs(diff) < seuil:
             tendance = "→ Stable"
             couleur_t = COULEUR_GRIS
+            emoji = "➖"
         elif diff > 0:
             tendance = "↑ En progression"
             couleur_t = COULEUR_VERT
+            emoji = "📈"
         else:
             tendance = "↓ En régression"
             couleur_t = COULEUR_PRIMAIRE
+            emoji = "📉"
 
         rows.append({
             "joueur": j, "n_matchs": n_total,
@@ -1991,41 +2162,81 @@ elif page == "Tendance forme":
             "moy_precedent": round(moy_precedent, 2),
             "diff": round(diff, 2),
             "tendance": tendance,
+            "emoji": emoji,
             "couleur": couleur_t,
             "statut": "OK"
         })
 
     df_t = pd.DataFrame(rows)
-
-    # Séparer les joueurs comparables des autres
     df_ok = df_t[df_t["statut"] == "OK"].sort_values("diff", ascending=False)
     df_pas_assez = df_t[df_t["statut"] != "OK"]
 
     st.markdown("---")
     st.subheader(f"Forme actuelle — {ind_tf_label}")
-    st.caption(f"_Moyenne sur les {fenetre} derniers matchs vs les {fenetre} précédents (il faut au moins {min_matchs_requis} matchs)_")
 
     if df_ok.empty:
-        st.warning(f"⚠️ Aucun joueur n'a encore joué assez de matchs pour comparer "
-                   f"sur cette fenêtre ({min_matchs_requis} matchs requis). "
-                   f"Essaie une fenêtre plus petite, ou attends d'avoir plus de matchs.")
+        st.warning(
+            f"⚠️ Aucun joueur n'a encore joué les {min_matchs_requis} matchs requis "
+            f"pour cette fenêtre. Choisis une fenêtre plus petite."
+        )
     else:
+        # ===== KPI synthèse en haut =====
+        nb_prog = int((df_ok["tendance"] == "↑ En progression").sum())
+        nb_stable = int((df_ok["tendance"] == "→ Stable").sum())
+        nb_reg = int((df_ok["tendance"] == "↓ En régression").sum())
+        k1, k2, k3 = st.columns(3)
+        k1.metric("📈 En progression", nb_prog)
+        k2.metric("➖ Stables", nb_stable)
+        k3.metric("📉 En régression", nb_reg)
+
+        st.markdown("")
+
         col_tab, col_chart = st.columns([1, 1.2])
 
         with col_tab:
+            st.markdown("**Détail par joueur**")
+            # Tableau enrichi avec coloration via style
             affichage_rows = []
             for _, r in df_ok.iterrows():
                 affichage_rows.append({
+                    "": r["emoji"],
                     "Joueur": r["joueur"],
                     f"{fenetre} derniers": r["moy_recent"],
                     f"{fenetre} précédents": r["moy_precedent"],
-                    "Δ": f"{r['diff']:+.2f}",
-                    "Tendance": r["tendance"]
+                    "Δ": r["diff"],
+                    "Tendance": r["tendance"],
                 })
-            st.dataframe(pd.DataFrame(affichage_rows), hide_index=True, use_container_width=True,
-                         height=min(600, 35 * len(affichage_rows) + 50))
+            df_aff = pd.DataFrame(affichage_rows)
+
+            def colorer_tendance(val):
+                if "progression" in str(val):
+                    return f"color: {COULEUR_VERT}; font-weight: 600;"
+                if "régression" in str(val):
+                    return f"color: {COULEUR_PRIMAIRE}; font-weight: 600;"
+                if "Stable" in str(val):
+                    return f"color: {COULEUR_GRIS};"
+                return ""
+
+            def colorer_delta(val):
+                if pd.isna(val):
+                    return ""
+                if val > 0.1:
+                    return f"color: {COULEUR_VERT}; font-weight: 600;"
+                if val < -0.1:
+                    return f"color: {COULEUR_PRIMAIRE}; font-weight: 600;"
+                return f"color: {COULEUR_GRIS};"
+
+            styled = (df_aff.style
+                      .applymap(colorer_tendance, subset=["Tendance"])
+                      .applymap(colorer_delta, subset=["Δ"])
+                      .format({"Δ": "{:+.2f}",
+                               f"{fenetre} derniers": "{:.2f}",
+                               f"{fenetre} précédents": "{:.2f}"}))
+            st.dataframe(styled, hide_index=True, use_container_width=True,
+                         height=min(600, 38 * len(affichage_rows) + 50))
 
         with col_chart:
+            st.markdown("**Écart visuel (Δ)**")
             df_sorted = df_ok.sort_values("diff", ascending=True)
             couleurs_bars = []
             for d in df_sorted["diff"]:
@@ -2043,11 +2254,11 @@ elif page == "Tendance forme":
                 cliponaxis=False
             ))
             fig.update_layout(
-                title=f"Δ {ind_tf_label} ({fenetre} derniers − {fenetre} précédents)",
-                height=max(400, 28 * len(df_sorted) + 80),
-                margin=dict(l=10, r=40, t=50, b=20),
+                height=max(400, 32 * len(df_sorted) + 80),
+                margin=dict(l=10, r=40, t=20, b=20),
                 xaxis=dict(showgrid=True, gridcolor="rgba(128,128,128,0.2)",
-                           zeroline=True, zerolinecolor="#888", zerolinewidth=2),
+                           zeroline=True, zerolinecolor="#888", zerolinewidth=2,
+                           title=f"Δ {ind_tf_label}"),
                 yaxis=dict(showgrid=False, automargin=True),
                 plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
                 showlegend=False
@@ -2055,19 +2266,23 @@ elif page == "Tendance forme":
             st.plotly_chart(fig, use_container_width=True)
 
         st.caption(
-            "**↑ vert** = progression nette · **↓ rouge** = régression nette · "
-            "**→ gris** = stable (Δ < 10% ou < 0.1). "
-            "La forme se base sur l'écart entre les 2 dernières périodes de jeu."
+            "**📈 vert** = progression nette · **📉 rouge** = régression nette · "
+            "**➖ gris** = stable (Δ < 10% ou < 0.1). "
+            f"Seuil de détection : 5% de la moyenne précédente, min 0.1."
         )
 
     # Joueurs sans assez de matchs
     if not df_pas_assez.empty:
         st.markdown("---")
-        st.markdown("##### Joueurs sans données suffisantes")
-        st.caption(f"Ces joueurs ont moins de {min_matchs_requis} matchs.")
-        not_enough = df_pas_assez[["joueur", "n_matchs"]].copy()
-        not_enough.columns = ["Joueur", "Matchs joués"]
-        st.dataframe(not_enough, hide_index=True, use_container_width=True)
+        with st.expander(f"👀 Joueurs avec moins de {min_matchs_requis} matchs ({len(df_pas_assez)})"):
+            st.caption(
+                f"Ces joueurs n'ont pas encore assez de matchs joués pour cette fenêtre "
+                f"de comparaison. Ils apparaîtront ici dès qu'ils auront {min_matchs_requis} matchs."
+            )
+            not_enough = df_pas_assez[["joueur", "n_matchs"]].copy()
+            not_enough.columns = ["Joueur", "Matchs joués"]
+            st.dataframe(not_enough.sort_values("Matchs joués", ascending=False),
+                         hide_index=True, use_container_width=True)
 
     # ===== EXPORT PDF =====
     if not df_ok.empty:
@@ -2236,6 +2451,170 @@ elif page == "Calendrier":
             mime="application/pdf",
             key="dl_cal"
         )
+
+
+# ============================================================================
+# PAGE — COMPOSITIONS (saisie protégée par mot de passe local)
+# ============================================================================
+
+elif page == "Compositions":
+    st.title("Compositions des matchs")
+
+    if not composition_table_exists():
+        st.error(
+            "❌ La table `composition_match` n'existe pas dans la base. "
+            "Lance le script `python add_compositions.py` une fois en local "
+            "puis recharge la page."
+        )
+        st.stop()
+
+    mdp_attendu = lire_mdp_local()
+
+    if mdp_attendu is None:
+        st.warning(
+            "🔒 Mode lecture seule.\n\n"
+            "Pour modifier les compositions, il faut être en local avec un fichier "
+            "`secrets.txt` contenant le mot de passe. "
+            "Sur le site public, cette page reste verrouillée."
+        )
+        mode_lecture = True
+    elif not page_compo_deverrouillee():
+        st.markdown("🔐 **Accès protégé**")
+        mdp_saisi = st.text_input("Mot de passe", type="password", key="mdp_input")
+        if st.button("Déverrouiller", type="primary"):
+            if mdp_saisi == mdp_attendu:
+                st.session_state["compo_auth_ok"] = True
+                st.rerun()
+            else:
+                st.error("Mot de passe incorrect.")
+        st.caption("Tu peux quand même consulter les compos déjà saisies ci-dessous.")
+        mode_lecture = True
+    else:
+        st.success("🔓 Mode édition activé.")
+        if st.button("🔒 Verrouiller"):
+            st.session_state["compo_auth_ok"] = False
+            st.rerun()
+        mode_lecture = False
+
+    # ===== Sélection du match =====
+    st.markdown("---")
+    matchs_co = get_matchs()
+    if matchs_co.empty:
+        st.info("Aucun match en base.")
+        st.stop()
+
+    options_match = {f"{m['libelle']} ({m['date_match'] or '?'})": int(m["match_id"])
+                     for _, m in matchs_co.iterrows()}
+    match_label = st.selectbox("Match", list(options_match.keys()))
+    m_id_compo = options_match[match_label]
+
+    # Compo actuelle
+    compo_actuelle = get_compo_match(m_id_compo)
+
+    # Tous les joueurs de l'équipe
+    joueurs_df = charger(
+        "SELECT joueur_id, nom, poste, numero FROM joueur WHERE actif = 1 ORDER BY nom"
+    )
+    joueurs_df["joueur"] = joueurs_df["nom"]
+
+    # ===== MODE LECTURE =====
+    if mode_lecture:
+        st.markdown("### Composition enregistrée")
+        a_compo = any(len(compo_actuelle[t]) > 0 for t in TYPES_COMPO)
+        if not a_compo:
+            st.info("_Aucune composition saisie pour ce match._")
+        else:
+            for t in TYPES_COMPO:
+                if compo_actuelle[t]:
+                    st.markdown(f"**{LIBELLES_COMPO[t]}** ({len(compo_actuelle[t])})")
+                    for j in compo_actuelle[t]:
+                        poste_str = f" — {j['poste']}" if j["poste"] else ""
+                        st.markdown(f"• {j['joueur']}{poste_str}")
+                    st.markdown("")
+        st.stop()
+
+    # ===== MODE ÉDITION =====
+    st.markdown("### Saisie")
+    st.caption(
+        "Pour chaque joueur, choisis son rôle dans le match. "
+        "Laisse sur **— Non sélectionné —** s'il n'a pas joué ou n'était pas dans la compo."
+    )
+
+    # Pré-remplissage : dict {joueur_id: type_compo} à partir de compo_actuelle
+    preselection = {}
+    for t in TYPES_COMPO:
+        for j in compo_actuelle[t]:
+            preselection[j["joueur_id"]] = t
+
+    options_role = ["— Non sélectionné —"] + [LIBELLES_COMPO[t] for t in TYPES_COMPO]
+    libelle_to_type = {LIBELLES_COMPO[t]: t for t in TYPES_COMPO}
+
+    # Formulaire de saisie : 2 colonnes pour gain de place
+    affectation = {}
+    joueurs_list = joueurs_df.to_dict("records")
+    nb_col = 2
+    cols = st.columns(nb_col)
+    for idx, j in enumerate(joueurs_list):
+        jid = int(j["joueur_id"])
+        nom = normaliser_nom(j["joueur"])
+        poste = f" ({j['poste']})" if j["poste"] else ""
+        type_pre = preselection.get(jid)
+        index_def = options_role.index(LIBELLES_COMPO[type_pre]) if type_pre else 0
+        with cols[idx % nb_col]:
+            choix = st.selectbox(
+                f"{nom}{poste}",
+                options_role, index=index_def,
+                key=f"compo_{m_id_compo}_{jid}"
+            )
+            if choix != "— Non sélectionné —":
+                affectation[jid] = libelle_to_type[choix]
+
+    # ===== Vérifications (avertissements, pas blocages) =====
+    st.markdown("---")
+    st.markdown("### Vérification")
+    pbs = []
+    par_type = {t: [jid for jid, tj in affectation.items() if tj == t] for t in TYPES_COMPO}
+
+    for q in ["quatuor1", "quatuor2", "quatuor3"]:
+        n_q = len(par_type[q])
+        if n_q != 4 and n_q > 0:
+            pbs.append(f"⚠️ **{LIBELLES_COMPO[q]}** a {n_q} joueur(s) au lieu de 4.")
+        elif n_q == 0:
+            pbs.append(f"ℹ️ {LIBELLES_COMPO[q]} est vide.")
+
+    if len(par_type["gardien_titulaire"]) > 1:
+        pbs.append(f"⚠️ Plus d'un gardien titulaire ({len(par_type['gardien_titulaire'])}).")
+    if len(par_type["gardien_remplacant"]) > 1:
+        pbs.append(f"⚠️ Plus d'un gardien remplaçant ({len(par_type['gardien_remplacant'])}).")
+
+    if not pbs:
+        st.success("✅ Compo valide (3 quatuors de 4).")
+    else:
+        for p in pbs:
+            if p.startswith("⚠️"):
+                st.warning(p)
+            else:
+                st.info(p)
+
+    # ===== Boutons =====
+    st.markdown("---")
+    c_save, c_clear = st.columns([1, 1])
+    with c_save:
+        if st.button("💾 Enregistrer la composition", type="primary"):
+            try:
+                enregistrer_compo(m_id_compo, affectation)
+                st.success(f"✅ Composition enregistrée pour {match_label}.")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Erreur : {e}")
+    with c_clear:
+        if st.button("🗑 Effacer la composition de ce match"):
+            try:
+                enregistrer_compo(m_id_compo, {})
+                st.success("✅ Composition effacée.")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Erreur : {e}")
 
 
 # ============================================================================
