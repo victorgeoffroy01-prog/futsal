@@ -230,9 +230,9 @@ def positions_losange(joueurs):
     """
     POS = {
         "pivot":   (50, 16),
-        "ailier_g": (25, 46),
-        "ailier_d": (75, 46),
-        "meneur":  (50, 74),
+        "ailier_g": (25, 44),
+        "ailier_d": (75, 44),
+        "meneur":  (50, 68),
     }
 
     def cat(poste):
