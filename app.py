@@ -1578,7 +1578,6 @@ elif page == "Fiche joueur":
 
 elif page == "Comparaison":
     st.title("Comparaison de joueurs")
-    st.caption(f"Portée : {portee} · Mode : Per 40 min (forcé pour comparabilité)")
 
     joueurs_dispo = sorted(perfs_raw[perfs_raw["role"] != "Gardien"]["joueur"].unique())
     if len(joueurs_dispo) < 2:
@@ -1593,28 +1592,55 @@ elif page == "Comparaison":
         st.info("Sélectionne deux joueurs différents.")
         st.stop()
 
-    df_40 = appliquer_mode(perfs_raw, "Per 40 min")
+    # Sélecteur de mode (Per 40 par défaut = mode recommandé)
+    mode_cmp = st.radio(
+        "Mode de comparaison",
+        ["Stats brutes", "Par minute", "Per 40 min"],
+        horizontal=True, key="mode_cmp", index=2,
+        help="Brutes = totaux. Par minute = stat / min jouées. Per 40 = extrapolation sur un match complet (recommandé pour comparer des joueurs avec des temps de jeu différents)."
+    )
+    st.caption(f"Portée : {portee} · Mode : {mode_cmp}")
+
+    df_cmp = appliquer_mode(perfs_raw, mode_cmp)
 
     def stats_joueur(nom):
-        sub = df_40[df_40["joueur"] == nom]
+        sub = df_cmp[df_cmp["joueur"] == nom]
         if match_id_filtre is None:
-            return agreger_joueur(sub, "Per 40 min").iloc[0]
+            return agreger_joueur(sub, mode_cmp).iloc[0]
         return sub.iloc[0]
 
     s1 = stats_joueur(j1)
     s2 = stats_joueur(j2)
+
+    # Suffixe d'affichage selon le mode
+    suffixe = {"Stats brutes": "", "Par minute": "/min", "Per 40 min": "/40"}[mode_cmp]
+
     indicateurs = [
-        ("Buts/40", "buts"), ("PD/40", "passes_decisives"),
-        ("Tirs/40", "tirs_total"), ("Tirs cadrés/40", "tirs_cadres"),
-        ("Interceptions/40", "interceptions"), ("Récupérations/40", "recuperations"),
-        ("D.OFF gagnés/40", "duels_off_gagnes"), ("D.DEF gagnés/40", "duels_def_gagnes"),
-        ("Pertes/40", "pertes_de_balles"), ("Fautes commises/40", "fautes_commises"),
+        (f"Buts{suffixe}", "buts"), (f"PD{suffixe}", "passes_decisives"),
+        (f"Tirs{suffixe}", "tirs_total"), (f"Tirs cadrés{suffixe}", "tirs_cadres"),
+        (f"Interceptions{suffixe}", "interceptions"), (f"Récupérations{suffixe}", "recuperations"),
+        (f"D.OFF gagnés{suffixe}", "duels_off_gagnes"), (f"D.DEF gagnés{suffixe}", "duels_def_gagnes"),
+        (f"Pertes{suffixe}", "pertes_de_balles"), (f"Fautes commises{suffixe}", "fautes_commises"),
     ]
+
+    # Formatage : entier en brutes, 2 décimales sinon
+    def _fmt_cmp(v):
+        if pd.isna(v):
+            return "-"
+        if mode_cmp == "Stats brutes":
+            return int(round(v))
+        return round(v, 2)
+
     tab_comp = pd.DataFrame({
         "Indicateur": [lbl for lbl, _ in indicateurs],
-        j1: [round(s1[c], 2) if pd.notna(s1[c]) else "-" for _, c in indicateurs],
-        j2: [round(s2[c], 2) if pd.notna(s2[c]) else "-" for _, c in indicateurs],
+        j1: [_fmt_cmp(s1[c]) for _, c in indicateurs],
+        j2: [_fmt_cmp(s2[c]) for _, c in indicateurs],
     })
+
+    # Rappel temps de jeu (utile pour interpréter le mode brut)
+    tj1 = s1.get("temps_jeu_min", 0) or 0
+    tj2 = s2.get("temps_jeu_min", 0) or 0
+    st.caption(f"⏱ {j1} : {tj1:.1f} min jouées · {j2} : {tj2:.1f} min jouées")
     col_t, col_b = st.columns([1, 1.3])
     with col_t:
         st.subheader("Tableau comparatif")
@@ -1654,13 +1680,19 @@ elif page == "Comparaison":
     # ===== EXPORT PDF =====
     st.markdown("---")
     if st.button("📄 Générer un PDF de la comparaison", type="primary", key="pdf_cmp"):
-        tab_data = [["Indicateur (per 40)", j1, j2]]
+        tab_data = [[f"Indicateur ({mode_cmp})", j1, j2]]
         for lbl, col in indicateurs:
-            v1_str = f"{s1[col]:.2f}" if pd.notna(s1[col]) else "-"
-            v2_str = f"{s2[col]:.2f}" if pd.notna(s2[col]) else "-"
+            if pd.notna(s1[col]):
+                v1_str = f"{s1[col]:.2f}" if mode_cmp != "Stats brutes" else str(int(round(s1[col])))
+            else:
+                v1_str = "-"
+            if pd.notna(s2[col]):
+                v2_str = f"{s2[col]:.2f}" if mode_cmp != "Stats brutes" else str(int(round(s2[col])))
+            else:
+                v2_str = "-"
             tab_data.append([lbl, v1_str, v2_str])
         sections = [
-            {"type": "table", "title": f"{j1} vs {j2} (Per 40 min)",
+            {"type": "table", "title": f"{j1} vs {j2} ({mode_cmp})",
              "data": tab_data,
              "widths": [6*cm, 5*cm, 5*cm]},
         ]
