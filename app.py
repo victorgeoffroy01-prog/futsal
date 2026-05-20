@@ -20,6 +20,7 @@ import plotly.graph_objects as go
 from pathlib import Path
 from datetime import date, datetime
 from io import BytesIO
+import base64
 
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -199,6 +200,151 @@ def lire_mdp_local():
 def page_compo_deverrouillee():
     """Renvoie True si l'utilisateur a saisi le bon mot de passe dans la session."""
     return st.session_state.get("compo_auth_ok", False)
+
+
+def photo_base64(nom):
+    """Renvoie la photo du joueur encodée en base64 (data URI) ou None."""
+    chemin = photo_joueur(nom)
+    if not chemin:
+        return None
+    try:
+        ext = Path(chemin).suffix.lower().lstrip(".")
+        mime = "jpeg" if ext in ("jpg", "jpeg") else ext
+        with open(chemin, "rb") as f:
+            data = base64.b64encode(f.read()).decode("utf-8")
+        return f"data:image/{mime};base64,{data}"
+    except Exception:
+        return None
+
+
+def positions_losange(joueurs):
+    """
+    Place les joueurs d'un quatuor sur un losange selon leur poste.
+    Renvoie une liste de (joueur_dict, x%, y%) — coordonnées en % du terrain
+    (0,0 = haut gauche ; 100,100 = bas droite ; le but adverse est en haut).
+
+    Losange idéal : Pivot (haut), 2 Ailiers (côtés), Meneur (bas).
+    Adaptation si surnombre : on remplit les positions libres dans l'ordre.
+    """
+    # Positions cibles du losange (x, y en %)
+    POS_PIVOT = (50, 18)
+    POS_AIL_G = (20, 45)
+    POS_AIL_D = (80, 45)
+    POS_MENEUR = (50, 72)
+    # Positions de secours si débordement
+    SECOURS = [(35, 30), (65, 30), (35, 60), (65, 60), (50, 45)]
+
+    def categorie(poste):
+        p = (poste or "").lower()
+        if "pivot" in p:
+            return "pivot"
+        if "ailier" in p:
+            return "ailier"
+        if "meneur" in p:
+            return "meneur"
+        return "autre"
+
+    pivots = [j for j in joueurs if categorie(j["poste"]) == "pivot"]
+    ailiers = [j for j in joueurs if categorie(j["poste"]) == "ailier"]
+    meneurs = [j for j in joueurs if categorie(j["poste"]) == "meneur"]
+    autres = [j for j in joueurs if categorie(j["poste"]) == "autre"]
+
+    placements = []
+    slots_pivot = [POS_PIVOT, (35, 18), (65, 18)]
+    slots_ailier = [POS_AIL_G, POS_AIL_D, (15, 30), (85, 30)]
+    slots_meneur = [POS_MENEUR, (35, 72), (65, 72)]
+
+    secours_iter = iter(SECOURS)
+
+    def placer(liste, slots):
+        for i, j in enumerate(liste):
+            if i < len(slots):
+                placements.append((j, *slots[i]))
+            else:
+                try:
+                    placements.append((j, *next(secours_iter)))
+                except StopIteration:
+                    placements.append((j, 50, 45))
+
+    placer(pivots, slots_pivot)
+    placer(ailiers, slots_ailier)
+    placer(meneurs, slots_meneur)
+    placer(autres, list(secours_iter))
+
+    return placements
+
+
+def rendu_terrain_futsal(joueurs_quatuor, gardien):
+    """
+    Génère le HTML d'un terrain de futsal avec les joueurs positionnés en losange.
+    joueurs_quatuor : liste de dicts {joueur, poste, ...}
+    gardien : dict du gardien titulaire ou None
+    """
+    placements = positions_losange(joueurs_quatuor)
+
+    def pastille(j, x, y, est_gardien=False):
+        photo = photo_base64(j["joueur"])
+        bordure = "#FF4B4B" if est_gardien else "#FFFFFF"
+        nom_court = j["joueur"]
+        if photo:
+            contenu = (
+                f'<img src="{photo}" '
+                f'style="width:100%;height:100%;object-fit:cover;border-radius:50%;" />'
+            )
+        else:
+            # Pas de photo : initiales dans un cercle
+            initiales = "".join([m[0] for m in nom_court.replace(".", "").split()[:2]]).upper()
+            contenu = (
+                f'<div style="width:100%;height:100%;border-radius:50%;'
+                f'background:#1c2733;display:flex;align-items:center;justify-content:center;'
+                f'color:#fff;font-weight:700;font-size:18px;">{initiales}</div>'
+            )
+        return f"""
+        <div style="position:absolute;left:{x}%;top:{y}%;transform:translate(-50%,-50%);
+                    text-align:center;width:90px;">
+            <div style="width:58px;height:58px;border-radius:50%;border:3px solid {bordure};
+                        margin:0 auto;overflow:hidden;box-shadow:0 2px 6px rgba(0,0,0,0.5);
+                        background:#0d1117;">
+                {contenu}
+            </div>
+            <div style="margin-top:4px;font-size:11px;font-weight:600;color:#fff;
+                        text-shadow:0 1px 3px rgba(0,0,0,0.9);white-space:nowrap;">
+                {nom_court}
+            </div>
+        </div>"""
+
+    pastilles_html = "".join(pastille(j, x, y) for j, x, y in placements)
+    gardien_html = ""
+    if gardien:
+        gardien_html = pastille(gardien, 50, 90, est_gardien=True)
+
+    # Terrain : fond vert avec lignes, but en haut, gardien en bas
+    return f"""
+    <div style="position:relative;width:100%;max-width:560px;margin:0 auto;
+                aspect-ratio:3/4;border-radius:12px;overflow:hidden;
+                background:linear-gradient(160deg,#1a7a3d 0%,#15833f 50%,#1a7a3d 100%);
+                border:3px solid #0d5028;">
+        <!-- Lignes du terrain -->
+        <div style="position:absolute;inset:0;">
+            <!-- Ligne médiane -->
+            <div style="position:absolute;top:50%;left:0;right:0;height:2px;
+                        background:rgba(255,255,255,0.4);"></div>
+            <!-- Cercle central -->
+            <div style="position:absolute;top:50%;left:50%;width:90px;height:90px;
+                        border:2px solid rgba(255,255,255,0.4);border-radius:50%;
+                        transform:translate(-50%,-50%);"></div>
+            <!-- Surface haute (but adverse) -->
+            <div style="position:absolute;top:0;left:50%;width:55%;height:14%;
+                        border:2px solid rgba(255,255,255,0.4);border-top:none;
+                        transform:translateX(-50%);border-radius:0 0 60px 60px;"></div>
+            <!-- Surface basse (notre but) -->
+            <div style="position:absolute;bottom:0;left:50%;width:55%;height:14%;
+                        border:2px solid rgba(255,255,255,0.4);border-bottom:none;
+                        transform:translateX(-50%);border-radius:60px 60px 0 0;"></div>
+        </div>
+        {pastilles_html}
+        {gardien_html}
+    </div>"""
 
 
 # ============================================================================
@@ -1403,6 +1549,24 @@ elif page == "Match":
                                        compo["gardien_remplacant"], "#8B949E"),
                         unsafe_allow_html=True)
 
+        # ===== Vue terrain (losange + photos) =====
+        quatuors_dispo = [q for q in ["quatuor1", "quatuor2", "quatuor3"] if compo[q]]
+        if quatuors_dispo:
+            st.markdown("")
+            st.markdown("##### Vue terrain")
+            gardien_titu = compo["gardien_titulaire"][0] if compo["gardien_titulaire"] else None
+            choix_q = st.radio(
+                "Quatuor à afficher",
+                quatuors_dispo,
+                format_func=lambda q: LIBELLES_COMPO[q],
+                horizontal=True, key=f"terrain_q_{m_id}"
+            )
+            st.markdown(
+                rendu_terrain_futsal(compo[choix_q], gardien_titu),
+                unsafe_allow_html=True
+            )
+            st.caption("🔴 Gardien titulaire · placement selon le poste de chaque joueur.")
+
     # ===== Faits marquants =====
     st.markdown("---")
     st.subheader("⚡ Faits marquants")
@@ -2584,8 +2748,6 @@ elif page == "Compositions":
 
     if len(par_type["gardien_titulaire"]) > 1:
         pbs.append(f"⚠️ Plus d'un gardien titulaire ({len(par_type['gardien_titulaire'])}).")
-    if len(par_type["gardien_remplacant"]) > 1:
-        pbs.append(f"⚠️ Plus d'un gardien remplaçant ({len(par_type['gardien_remplacant'])}).")
 
     if not pbs:
         st.success("✅ Compo valide (3 quatuors de 4).")
