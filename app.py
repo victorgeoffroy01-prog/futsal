@@ -1335,7 +1335,7 @@ elif page == "Match":
 
     # ===== Composition / tableau complet =====
     st.subheader("👥 Composition")
-    compo = perfs_match[["joueur", "poste", "numero_match", "role", "temps_jeu_min",
+    compo = perfs_match[["joueur", "poste", "numero", "role", "temps_jeu_min",
                          "buts", "passes_decisives", "tirs_cadres",
                          "interceptions", "recuperations", "pertes_de_balles"]].copy()
     compo["temps_jeu_min"] = compo["temps_jeu_min"].round(1)
