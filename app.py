@@ -184,6 +184,8 @@ def fmt(v, mode):
         return "-"
     if mode == "Stats brutes":
         return f"{int(round(v))}"
+    if mode == "Par minute":
+        return f"{v:.3f}"
     return f"{v:.2f}"
 
 
@@ -293,7 +295,8 @@ def barres_horizontales(df, col_val, titre, couleur=COULEUR_PRIMAIRE, top_n=10):
 
 def barres_horizontales_comparaison(labels, val_joueur, val_moyenne,
                                      nom_joueur="Joueur", nom_ref="Moy. Équipe",
-                                     couleur_joueur=COULEUR_BLEU, couleur_ref=COULEUR_MOY):
+                                     couleur_joueur=COULEUR_BLEU, couleur_ref=COULEUR_MOY,
+                                     decimales=1):
     """Barres horizontales doubles. Affiche TOUJOURS la valeur (y compris 0)."""
     def fmt_val(v):
         if v is None or pd.isna(v):
@@ -302,7 +305,7 @@ def barres_horizontales_comparaison(labels, val_joueur, val_moyenne,
         if isinstance(v, (int, float)):
             if v == int(v):
                 return f"{int(v)}"
-            return f"{v:.1f}"
+            return f"{v:.{decimales}f}"
         return str(v)
 
     fig = go.Figure()
@@ -580,7 +583,7 @@ def pdf_fiche_joueur(joueur, agg_brut, agg_min, agg_40, perfs_joueur, notes_joue
         data.append([
             lbl,
             f"{int(v_brut)}" if pd.notna(v_brut) else "-",
-            f"{v_min:.2f}" if v_min is not None and pd.notna(v_min) else "-",
+            f"{v_min:.3f}" if v_min is not None and pd.notna(v_min) else "-",
             f"{v_40:.2f}" if pd.notna(v_40) else "-"
         ])
     t = Table(data, colWidths=[5.5*cm, 3.5*cm, 3.5*cm, 3.5*cm])
@@ -1055,6 +1058,8 @@ elif page == "Vue équipe":
             if c not in ["Joueur", "Poste"]:
                 if mode == "Stats brutes" or c in ["M", "Min"]:
                     df_aff[c] = df_aff[c].apply(lambda v: int(round(v)) if pd.notna(v) else None)
+                elif mode == "Par minute":
+                    df_aff[c] = df_aff[c].apply(lambda v: round(v, 3) if pd.notna(v) else None)
                 else:
                     df_aff[c] = df_aff[c].apply(lambda v: round(v, 2) if pd.notna(v) else None)
         st.dataframe(df_aff.sort_values("B", ascending=False), hide_index=True, use_container_width=True)
@@ -1623,13 +1628,21 @@ elif page == "Comparaison":
         (f"Pertes{suffixe}", "pertes_de_balles"), (f"Fautes commises{suffixe}", "fautes_commises"),
     ]
 
-    # Formatage : entier en brutes, 2 décimales sinon
+    # Formatage : entier en brutes, 3 décimales en par minute (valeurs petites), 2 sinon
+    # Format string forcé pour que Streamlit affiche correctement les décimales
+    if mode_cmp == "Stats brutes":
+        decimales = 0
+    elif mode_cmp == "Par minute":
+        decimales = 3
+    else:  # Per 40 min
+        decimales = 2
+
     def _fmt_cmp(v):
         if pd.isna(v):
             return "-"
-        if mode_cmp == "Stats brutes":
-            return int(round(v))
-        return round(v, 2)
+        if decimales == 0:
+            return f"{int(round(v))}"
+        return f"{v:.{decimales}f}"
 
     tab_comp = pd.DataFrame({
         "Indicateur": [lbl for lbl, _ in indicateurs],
@@ -1653,7 +1666,8 @@ elif page == "Comparaison":
         # Mêmes couleurs que le radar : j1=ROUGE, j2=BLEU
         fig = barres_horizontales_comparaison(
             labels_i, v1, v2, nom_joueur=j1, nom_ref=j2,
-            couleur_joueur=COULEUR_PRIMAIRE, couleur_ref=COULEUR_BLEU
+            couleur_joueur=COULEUR_PRIMAIRE, couleur_ref=COULEUR_BLEU,
+            decimales=decimales if decimales > 0 else 1
         )
         st.plotly_chart(fig, use_container_width=True)
 
@@ -1682,14 +1696,8 @@ elif page == "Comparaison":
     if st.button("📄 Générer un PDF de la comparaison", type="primary", key="pdf_cmp"):
         tab_data = [[f"Indicateur ({mode_cmp})", j1, j2]]
         for lbl, col in indicateurs:
-            if pd.notna(s1[col]):
-                v1_str = f"{s1[col]:.2f}" if mode_cmp != "Stats brutes" else str(int(round(s1[col])))
-            else:
-                v1_str = "-"
-            if pd.notna(s2[col]):
-                v2_str = f"{s2[col]:.2f}" if mode_cmp != "Stats brutes" else str(int(round(s2[col])))
-            else:
-                v2_str = "-"
+            v1_str = _fmt_cmp(s1[col])
+            v2_str = _fmt_cmp(s2[col])
             tab_data.append([lbl, v1_str, v2_str])
         sections = [
             {"type": "table", "title": f"{j1} vs {j2} ({mode_cmp})",
@@ -1739,6 +1747,8 @@ elif page == "Gardiens":
         if c not in ["Gardien"]:
             if mode == "Stats brutes" or c in ["M", "Min"]:
                 agg_disp[c] = agg_disp[c].apply(lambda v: int(round(v)) if pd.notna(v) else "-")
+            elif mode == "Par minute":
+                agg_disp[c] = agg_disp[c].apply(lambda v: round(v, 3) if pd.notna(v) else "-")
             else:
                 agg_disp[c] = agg_disp[c].apply(lambda v: round(v, 2) if pd.notna(v) else "-")
     st.subheader("Synthèse gardiens")
