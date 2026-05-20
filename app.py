@@ -1178,19 +1178,31 @@ with st.sidebar:
     st.caption(f"{equipe['categorie']} · Saison {equipe['saison']}")
 
     st.markdown("---")
-    # Pages de base
-    pages_dispo = ["Accueil", "Vue équipe", "Match", "Fiche joueur", "Comparaison",
-                   "Gardiens", "Évolution", "Tendance forme", "Notation",
-                   "Calendrier"]
-    # Page Compositions visible uniquement si secrets.txt existe en local
-    if Path("secrets.txt").exists():
-        pages_dispo.append("Compositions")
-    pages_dispo.append("Légende")
 
+    # Navigation en 4 univers (le nom de page renvoyé reste identique au reste du code)
+    UNIVERS = {
+        "🛡️ Équipe": ["Accueil", "Vue équipe", "Évolution", "Tendance forme"],
+        "👤 Joueurs": ["Fiche joueur", "Comparaison", "Gardiens", "Notation"],
+        "⚽ Matchs": ["Match", "Calendrier"],
+        "📖 Référence": ["Légende"],
+    }
+    # Compositions visible seulement en local (secrets.txt présent)
+    if Path("secrets.txt").exists():
+        UNIVERS["⚽ Matchs"].append("Compositions")
+
+    univers_sel = st.radio(
+        "Univers", list(UNIVERS.keys()),
+        label_visibility="collapsed", key="univers_nav"
+    )
+    st.markdown(
+        f'<div style="margin:6px 0 2px 0;font-size:11px;font-weight:700;'
+        f'color:{FFF_DORE};letter-spacing:1px;text-transform:uppercase;">'
+        f'{univers_sel.split(" ", 1)[1]}</div>',
+        unsafe_allow_html=True
+    )
     page = st.radio(
-        "Navigation",
-        pages_dispo,
-        label_visibility="collapsed"
+        "Page", UNIVERS[univers_sel],
+        label_visibility="collapsed", key="page_nav"
     )
 
     st.markdown("---")
@@ -1787,16 +1799,18 @@ elif page == "Match":
             {"type": "kpi", "label": "Tirs cadrés", "value": int(perfs_match_jc["tirs_cadres"].sum())},
             {"type": "kpi", "label": "Pertes", "value": int(perfs_match_jc["pertes_de_balles"].sum())},
         ]
-        # Compo
+        # Compo (conversion sûre : gère NaN et None)
+        def _i(v):
+            return int(v) if pd.notna(v) else 0
         tab_compo = [["Joueur", "Poste", "Rôle", "Min", "B", "PD", "T.cad", "Inter.", "Récup.", "Pertes"]]
         for _, p in perfs_match.sort_values("temps_jeu_min", ascending=False).iterrows():
             tab_compo.append([p["joueur"], p["poste"] or "-", p["role"],
-                              f"{p['temps_jeu_min']:.1f}",
-                              str(int(p["buts"] or 0)), str(int(p["passes_decisives"] or 0)),
-                              str(int(p["tirs_cadres"] or 0)),
-                              str(int(p["interceptions"] or 0)),
-                              str(int(p["recuperations"] or 0)),
-                              str(int(p["pertes_de_balles"] or 0))])
+                              f"{p['temps_jeu_min']:.1f}" if pd.notna(p['temps_jeu_min']) else "0.0",
+                              str(_i(p["buts"])), str(_i(p["passes_decisives"])),
+                              str(_i(p["tirs_cadres"])),
+                              str(_i(p["interceptions"])),
+                              str(_i(p["recuperations"])),
+                              str(_i(p["pertes_de_balles"]))])
         # Faits marquants
         faits_lignes = []
         for _, b in buteurs.iterrows():
@@ -1804,11 +1818,27 @@ elif page == "Match":
         for _, p in passeurs.iterrows():
             faits_lignes.append(f"🎯 {p['joueur']} — {int(p['passes_decisives'])} passe(s) déc.")
         for _, g in gks_match.iterrows():
-            faits_lignes.append(f"🧤 {g['joueur']} — {int(g['arrets'] or 0)} arrêts, {int(g['buts_encaisses'] or 0)} BE")
+            faits_lignes.append(f"🧤 {g['joueur']} — {_i(g['arrets'])} arrêts, {_i(g['buts_encaisses'])} BE")
         faits_html = "<br/>".join(faits_lignes) if faits_lignes else "Aucun fait marquant."
 
-        sections = tab_kpi + [
-            {"type": "table", "title": "Composition", "data": tab_compo,
+        # Composition par quatuors (si saisie)
+        compo_pdf = get_compo_match(m_id)
+        a_compo_pdf = any(len(compo_pdf[t]) > 0 for t in TYPES_COMPO)
+        sections_compo = []
+        if a_compo_pdf:
+            lignes_compo = []
+            for t in ["quatuor1", "quatuor2", "quatuor3", "remplacant",
+                      "gardien_titulaire", "gardien_remplacant"]:
+                if compo_pdf[t]:
+                    noms = ", ".join(j["joueur"] for j in compo_pdf[t])
+                    lignes_compo.append(f"<b>{LIBELLES_COMPO[t]}</b> : {noms}")
+            compo_quatuors_html = "<br/>".join(lignes_compo)
+            sections_compo = [
+                {"type": "texte", "title": "Composition (quatuors)", "content": compo_quatuors_html},
+            ]
+
+        sections = tab_kpi + sections_compo + [
+            {"type": "table", "title": "Statistiques par joueur", "data": tab_compo,
              "widths": [3.5*cm, 2.5*cm, 2*cm, 1.5*cm, 1*cm, 1*cm, 1.4*cm, 1.4*cm, 1.4*cm, 1.4*cm]},
             {"type": "texte", "title": "Faits marquants", "content": faits_html},
         ]
