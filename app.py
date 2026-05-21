@@ -517,6 +517,110 @@ def agreger_joueur(df, mode):
     return sums
 
 
+# --- Percentiles par poste / équipe ---
+
+# Indicateurs affichés dans le radar (libellé, colonne, sens) — sens="+" : plus = mieux
+PERCENTILE_INDICATEURS = [
+    ("Buts", "buts", "+"),
+    ("Passes déc.", "passes_decisives", "+"),
+    ("Tirs", "tirs_total", "+"),
+    ("Tirs cadrés", "tirs_cadres", "+"),
+    ("Récupérations", "recuperations", "+"),
+    ("Interceptions", "interceptions", "+"),
+    ("Duels OFF gagnés", "duels_off_gagnes", "+"),
+    ("Duels DEF gagnés", "duels_def_gagnes", "+"),
+    ("Conservation", "pertes_de_balles", "-"),  # moins de pertes = mieux (inversé)
+]
+
+
+def calculer_percentiles(joueur_id, comparer_par="poste"):
+    """
+    Calcule le percentile du joueur sur chaque indicateur, en Per 40 min.
+    comparer_par : 'poste' (vs joueurs du même poste) ou 'equipe' (vs tous les joueurs de champ).
+    Renvoie (liste de dicts {libelle, valeur, percentile}, nb_joueurs_groupe, poste_joueur).
+    """
+    perfs = get_perfs()
+    perfs = perfs[perfs["role"] != "Gardien"].copy()
+    agg = agreger_joueur(perfs, "Per 40 min")
+    if agg.empty or joueur_id not in agg["joueur_id"].values:
+        return [], 0, None
+
+    ligne_j = agg[agg["joueur_id"] == joueur_id].iloc[0]
+    poste_j = ligne_j.get("poste")
+
+    if comparer_par == "poste" and poste_j:
+        groupe = agg[agg["poste"] == poste_j]
+    else:
+        groupe = agg
+
+    nb = len(groupe)
+    resultats = []
+    for libelle, col, sens in PERCENTILE_INDICATEURS:
+        if col not in agg.columns:
+            continue
+        valeurs = groupe[col].fillna(0).astype(float)
+        v_joueur = float(ligne_j[col]) if pd.notna(ligne_j[col]) else 0.0
+        if sens == "-":
+            # Pour les pertes : on inverse (moins = meilleur percentile)
+            rang = (valeurs > v_joueur).sum()  # nb de joueurs avec PLUS de pertes (donc pires)
+        else:
+            rang = (valeurs < v_joueur).sum()  # nb de joueurs strictement en dessous
+        # Percentile = part des joueurs que le joueur dépasse
+        pct = round(100 * rang / nb) if nb > 0 else 0
+        resultats.append({"libelle": libelle, "valeur": v_joueur, "percentile": pct})
+    return resultats, nb, poste_j
+
+
+def couleur_percentile(p):
+    """Rouge (bas) → orange → vert (haut), façon datascout."""
+    if p >= 70:
+        return "#2BB673"   # vert
+    if p >= 40:
+        return "#7FC241"   # vert-jaune
+    if p >= 20:
+        return "#EF9F27"   # orange
+    return "#E5544B"       # rouge
+
+
+def radar_petales_percentiles(resultats, nom_joueur):
+    """Radar en pétales (barpolar Plotly) : un pétale par stat, hauteur = percentile, couleur = niveau."""
+    libelles = [r["libelle"] for r in resultats]
+    valeurs = [r["percentile"] for r in resultats]
+    couleurs = [couleur_percentile(p) for p in valeurs]
+
+    fig = go.Figure(go.Barpolar(
+        r=valeurs,
+        theta=libelles,
+        marker=dict(color=couleurs, line=dict(color="#0E1525", width=2)),
+        opacity=0.92,
+        hovertemplate="%{theta}<br>Percentile : %{r}<extra></extra>",
+    ))
+    # Couche texte : la valeur du percentile posée au bout de chaque pétale
+    fig.add_trace(go.Scatterpolar(
+        r=[v + 8 if v < 88 else v - 6 for v in valeurs],
+        theta=libelles,
+        mode="text",
+        text=[f"<b>{p}</b>" for p in valeurs],
+        textfont=dict(size=13, color="#F0F3FA"),
+        hoverinfo="skip",
+        showlegend=False,
+    ))
+    fig.update_layout(
+        height=520,
+        margin=dict(l=60, r=60, t=50, b=50),
+        paper_bgcolor="rgba(0,0,0,0)",
+        polar=dict(
+            bgcolor="rgba(255,255,255,0.02)",
+            radialaxis=dict(range=[0, 100], showticklabels=False, ticks="",
+                            gridcolor="rgba(255,255,255,0.12)", gridwidth=1),
+            angularaxis=dict(tickfont=dict(size=12, color="#F0F3FA"),
+                             gridcolor="rgba(255,255,255,0.1)", rotation=90, direction="clockwise"),
+        ),
+        showlegend=False,
+    )
+    return fig
+
+
 def fmt(v, mode):
     if v is None or pd.isna(v):
         return "-"
@@ -1535,9 +1639,9 @@ elif page == "Vue équipe":
         couleurs_tps = []
         for v in tps["minutes"]:
             if v >= moy_min * 1.25:
-                couleurs_tps.append(FFF_DORE)        # surexploité
+                couleurs_tps.append(FFF_DORE)        # au-dessus de la moyenne
             elif v <= moy_min * 0.5:
-                couleurs_tps.append(FFF_ROUGE)       # sous-utilisé
+                couleurs_tps.append(FFF_ROUGE)       # sous la moyenne
             else:
                 couleurs_tps.append(FFF_BLEU)        # dans la moyenne
         fig_tps = go.Figure(go.Bar(
@@ -1559,8 +1663,8 @@ elif page == "Vue équipe":
             plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", showlegend=False
         )
         st.plotly_chart(fig_tps, use_container_width=True)
-        st.caption("🟡 surexploité (≥125% de la moyenne) · 🔵 dans la moyenne · "
-                   "🔴 sous-utilisé (≤50%). Aide à équilibrer la rotation.")
+        st.caption("🟡 au-dessus de la moyenne · 🔵 dans la moyenne · "
+                   "🔴 sous la moyenne. Aide à visualiser la répartition du temps de jeu.")
 
     # ===== EXPORT PDF =====
     st.markdown("---")
@@ -2026,13 +2130,15 @@ elif page == "Fiche joueur":
             cc1.metric("Cadrage", f"{taux_cadrage:.0f}%", help="Part des tirs cadrés sur total tirs")
             cc2.metric("Conversion", f"{taux_conv:.0f}%", help="Buts / total tirs")
             cc3.metric("Efficacité cadré", f"{conv_cadre:.0f}%", help="Buts / tirs cadrés")
-            # Petit jugement qualitatif
+            # Profil descriptif (indicatif, pas un jugement)
             if taux_conv >= 25:
-                st.caption("🟢 Finisseur efficace")
+                st.caption("Profil : finition efficace pour son volume de tirs.")
             elif taux_conv >= 12:
-                st.caption("🟡 Finition correcte")
+                st.caption("Profil : finition proche de la moyenne, équilibre volume / efficacité.")
+            elif tirs_tot >= 5:
+                st.caption("Profil : fort volume de tirs, conversion encore basse — marge de progression à la finition.")
             else:
-                st.caption("🔴 Finition à travailler")
+                st.caption("Profil : peu de tirs sur cette portée, échantillon limité pour juger la finition.")
         else:
             st.caption("Aucun tir sur la portée sélectionnée.")
 
@@ -2055,6 +2161,61 @@ elif page == "Fiche joueur":
                        f"_Bilan d'équipe quand il est présent, pas un +/- individuel._")
         else:
             st.caption("Aucun match joué sur la portée sélectionnée.")
+
+    # ===== Profil en percentiles (style datascout) =====
+    st.markdown("---")
+    st.subheader("📊 Profil en percentiles")
+
+    # joueur_id du joueur sélectionné
+    jid_sel = None
+    if not df_j_brut.empty:
+        jid_sel = int(df_j_brut["joueur_id"].iloc[0])
+
+    if jid_sel is None:
+        st.info("Joueur introuvable.")
+    else:
+        comparer_label = st.radio(
+            "Comparer à",
+            ["Son poste", "Toute l'équipe"],
+            horizontal=True, key="percentile_mode"
+        )
+        comparer_par = "poste" if comparer_label == "Son poste" else "equipe"
+        resultats_pct, nb_groupe, poste_j = calculer_percentiles(jid_sel, comparer_par)
+
+        # Warning fiabilité (permanent)
+        groupe_txt = (f"{nb_groupe} joueur(s) au poste « {poste_j} »"
+                      if comparer_par == "poste" else f"{nb_groupe} joueurs de champ")
+        st.warning(
+            f"⚠️ **Fiabilité limitée.** Percentiles calculés sur {groupe_txt}, "
+            f"sur un faible nombre de matchs. Avec si peu de données, un percentile peut "
+            f"basculer de 0 à 100 avec une seule action. À interpréter comme une tendance, "
+            f"pas comme une vérité statistique. Ces valeurs gagneront en sens au fil de la saison."
+        )
+
+        if not resultats_pct or nb_groupe < 2:
+            st.info("Pas assez de joueurs dans ce groupe pour calculer des percentiles.")
+        else:
+            col_rad_p, col_tab_p = st.columns([1.3, 1])
+            with col_rad_p:
+                st.plotly_chart(radar_petales_percentiles(resultats_pct, joueur_sel),
+                                use_container_width=True)
+                st.caption(
+                    "Un **85** signifie que le joueur fait mieux que **85%** des joueurs "
+                    "de son groupe de comparaison, ramené à 40 min de jeu. "
+                    "🟢 élevé · 🟠 moyen · 🔴 bas."
+                )
+            with col_tab_p:
+                st.markdown("**Détail**")
+                df_pct = pd.DataFrame([
+                    {"Indicateur": r["libelle"],
+                     "Valeur /40": round(r["valeur"], 2),
+                     "Percentile": r["percentile"]}
+                    for r in resultats_pct
+                ])
+                st.dataframe(df_pct, hide_index=True, use_container_width=True,
+                             height=min(500, 36 * len(df_pct) + 50))
+                st.caption("« Conservation » = inverse des pertes de balle "
+                           "(percentile élevé = peu de pertes).")
 
     st.markdown("---")
     st.subheader("Joueur vs Moyenne équipe")
