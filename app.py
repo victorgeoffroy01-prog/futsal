@@ -530,6 +530,8 @@ PERCENTILE_INDICATEURS = [
     ("Duels OFF gagnés", "duels_off_gagnes", "+"),
     ("Duels DEF gagnés", "duels_def_gagnes", "+"),
     ("Conservation", "pertes_de_balles", "-"),  # moins de pertes = mieux (inversé)
+    ("Discipline", "fautes_commises", "-"),      # moins de fautes commises = mieux (inversé)
+    ("Fautes subies", "fautes_subies", "+"),     # plus = mieux (le joueur provoque la faute)
 ]
 
 
@@ -2214,8 +2216,10 @@ elif page == "Fiche joueur":
                 ])
                 st.dataframe(df_pct, hide_index=True, use_container_width=True,
                              height=min(500, 36 * len(df_pct) + 50))
-                st.caption("« Conservation » = inverse des pertes de balle "
-                           "(percentile élevé = peu de pertes).")
+                st.caption("« Conservation » : le joueur qui perd le moins de ballons "
+                           "de son groupe obtient le meilleur percentile. "
+                           "« Discipline » : le joueur qui commet le moins de fautes "
+                           "obtient le meilleur percentile.")
 
     st.markdown("---")
     st.subheader("Joueur vs Moyenne équipe")
