@@ -116,6 +116,48 @@ st.markdown("""
     [data-baseweb="radio"] [aria-checked="true"] div:first-child {
         border-color: #C9A24B !important;
     }
+
+    /* ===================== RESPONSIVE MOBILE ===================== */
+    /* Le rendu desktop reste identique ; ces règles ne s'appliquent que sous 640px. */
+    @media (max-width: 640px) {
+        .block-container {
+            padding-left: 0.6rem !important;
+            padding-right: 0.6rem !important;
+            padding-top: 0.8rem !important;
+        }
+        h1 { font-size: 1.4rem !important; }
+        h2, h3 { font-size: 1.1rem !important; }
+
+        /* Metrics plus compactes */
+        [data-testid="stMetricValue"] { font-size: 1.25rem !important; }
+        [data-testid="stMetricLabel"] { font-size: 0.72rem !important; }
+        [data-testid="stMetric"] { padding: 8px 10px !important; }
+
+        /* Tableaux : scroll horizontal au lieu d'écraser les colonnes */
+        [data-testid="stDataFrame"] { overflow-x: auto !important; }
+
+        /* Les colonnes Streamlit s'empilent déjà ; on réduit l'écart */
+        [data-testid="stHorizontalBlock"] { gap: 0.5rem !important; }
+
+        /* Cartes HTML custom : padding réduit, texte adapté */
+        div[style*="border-radius:12px"] { padding: 12px !important; }
+
+        /* En-tête FFF : empile logo + titre, réduit la taille */
+        div[style*="linear-gradient(135deg,#1A2B5C"] { flex-wrap: wrap !important; }
+        div[style*="linear-gradient(135deg,#1A2B5C"] img { height: 40px !important; }
+
+        /* Graphiques Plotly : hauteur min pour rester lisibles */
+        .js-plotly-plot { min-height: 300px; }
+
+        /* Sidebar : un peu plus étroite pour laisser de la place */
+        [data-testid="stSidebar"] { min-width: 220px !important; }
+    }
+
+    /* Tablette : ajustements légers */
+    @media (min-width: 641px) and (max-width: 980px) {
+        h1 { font-size: 1.7rem !important; }
+        [data-testid="stMetricValue"] { font-size: 1.5rem !important; }
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -417,14 +459,15 @@ def rendu_terrain_futsal(joueurs_quatuor, gardien):
             initiales = "".join([m[0] for m in nom_court.replace(".", "").split()[:2]]).upper()
             contenu = (f'<div style="width:100%;height:100%;border-radius:50%;'
                        f'background:#1c2733;display:flex;align-items:center;justify-content:center;'
-                       f'color:#fff;font-weight:700;font-size:48px;">{initiales}</div>')
+                       f'color:#fff;font-weight:700;font-size:clamp(20px,6vw,48px);">{initiales}</div>')
         return (
             f'<div style="position:absolute;left:{x}%;top:{y}%;transform:translate(-50%,-50%);'
-            f'text-align:center;width:180px;">'
-            f'<div style="width:150px;height:150px;border-radius:50%;border:5px solid {bordure};'
+            f'text-align:center;width:clamp(72px,20vw,180px);">'
+            f'<div style="width:clamp(60px,16vw,150px);height:clamp(60px,16vw,150px);'
+            f'border-radius:50%;border:clamp(2px,0.6vw,5px) solid {bordure};'
             f'margin:0 auto;overflow:hidden;box-shadow:0 4px 10px rgba(0,0,0,0.6);'
             f'background:#0d1117;">{contenu}</div>'
-            f'<div style="margin-top:7px;font-size:16px;font-weight:700;color:#fff;'
+            f'<div style="margin-top:5px;font-size:clamp(9px,2.6vw,16px);font-weight:700;color:#fff;'
             f'text-shadow:0 1px 4px rgba(0,0,0,1);white-space:nowrap;">{nom_court}</div>'
             f'</div>'
         )
@@ -479,15 +522,19 @@ PAYS_ISO = {
 }
 
 
-def drapeau_pays(nom):
-    """Renvoie l'emoji drapeau d'un pays à partir de son nom français, ou '' si inconnu."""
+def drapeau_pays(nom, hauteur=20):
+    """Renvoie une balise <img> du drapeau (via flagcdn) à partir du nom français, ou '' si inconnu."""
     if not nom:
         return ""
     iso = PAYS_ISO.get(nom.strip().lower())
     if not iso:
         return ""
-    # Emoji drapeau = 2 indicateurs régionaux (offset 0x1F1E6 sur A)
-    return "".join(chr(0x1F1E6 + (ord(c) - ord("A"))) for c in iso.upper())
+    code = iso.lower()
+    # flagcdn fournit des PNG de drapeaux par code ISO 2 lettres
+    return (f'<img src="https://flagcdn.com/h40/{code}.png" '
+            f'style="height:{hauteur}px;vertical-align:middle;border-radius:3px;'
+            f'margin-right:6px;box-shadow:0 1px 3px rgba(0,0,0,0.4);" '
+            f'alt="{nom}" />')
 
 
 # ============================================================================
@@ -1620,9 +1667,13 @@ elif page == "Vue équipe":
         c6.metric("Buts contre", int(bilan["buts_contre"]))
     else:
         m = matchs[matchs["match_id"] == match_id_filtre].iloc[0]
+        dr = drapeau_pays(m["adversaire"], hauteur=22)
+        if dr:
+            st.markdown(f'<div style="font-size:13px;color:#888;text-transform:uppercase;">Adversaire</div>'
+                        f'<div style="font-size:1.6rem;font-weight:700;margin-bottom:8px;">{dr}{m["adversaire"]}</div>',
+                        unsafe_allow_html=True)
         c1, c2, c3, c4 = st.columns(4)
-        dr = drapeau_pays(m["adversaire"])
-        c1.metric("Adversaire", f"{dr} {m['adversaire']}".strip())
+        c1.metric("Adversaire", m["adversaire"])
         c2.metric("Score", f"{m['score_pour']} - {m['score_contre']}")
         c3.metric("Résultat", m["resultat"])
         c4.metric("Lieu", m["lieu"] or "-")
