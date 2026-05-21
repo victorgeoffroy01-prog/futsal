@@ -1519,6 +1519,49 @@ elif page == "Vue équipe":
     else:
         st.info("Sélectionne au moins un indicateur.")
 
+    # ===== Charge / équilibre du temps de jeu =====
+    st.markdown("---")
+    st.subheader("⏱ Charge — temps de jeu sur la saison")
+    perfs_tps = get_perfs()
+    perfs_tps_jc = perfs_tps[perfs_tps["role"] != "Gardien"]
+    tps = (perfs_tps_jc.groupby("joueur")
+           .agg(minutes=("temps_jeu_min", "sum"), matchs=("match_id", "nunique"))
+           .reset_index())
+    if tps.empty or tps["minutes"].sum() == 0:
+        st.info("Pas encore de temps de jeu enregistré.")
+    else:
+        tps = tps.sort_values("minutes", ascending=True)
+        moy_min = tps["minutes"].mean()
+        couleurs_tps = []
+        for v in tps["minutes"]:
+            if v >= moy_min * 1.25:
+                couleurs_tps.append(FFF_DORE)        # surexploité
+            elif v <= moy_min * 0.5:
+                couleurs_tps.append(FFF_ROUGE)       # sous-utilisé
+            else:
+                couleurs_tps.append(FFF_BLEU)        # dans la moyenne
+        fig_tps = go.Figure(go.Bar(
+            x=tps["minutes"], y=tps["joueur"], orientation="h",
+            marker=dict(color=couleurs_tps, line=dict(color="rgba(201,162,75,0.3)", width=1)),
+            text=[f"  {int(m)} min ({int(n)} m)" for m, n in zip(tps["minutes"], tps["matchs"])],
+            textposition="outside", textfont=dict(size=12, color="#F0F3FA"),
+            cliponaxis=False,
+            hovertemplate="%{y}<br>%{x:.0f} min<extra></extra>"
+        ))
+        fig_tps.add_vline(x=moy_min, line_dash="dash", line_color="#E3C77A",
+                          annotation_text=f"moyenne {moy_min:.0f} min",
+                          annotation_position="top")
+        fig_tps.update_layout(
+            height=max(360, 26 * len(tps) + 80),
+            margin=dict(l=10, r=90, t=30, b=20),
+            xaxis=dict(showgrid=True, gridcolor="rgba(128,128,128,0.15)", title="Minutes cumulées"),
+            yaxis=dict(automargin=True, tickfont=dict(size=12)),
+            plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", showlegend=False
+        )
+        st.plotly_chart(fig_tps, use_container_width=True)
+        st.caption("🟡 surexploité (≥125% de la moyenne) · 🔵 dans la moyenne · "
+                   "🔴 sous-utilisé (≤50%). Aide à équilibrer la rotation.")
+
     # ===== EXPORT PDF =====
     st.markdown("---")
     if st.button("📄 Générer un PDF de la Vue équipe", type="primary", key="pdf_vue_eq"):
@@ -1755,6 +1798,31 @@ elif page == "Match":
             )
             st.caption("🔴 Gardien titulaire · placement selon le poste de chaque joueur.")
 
+        # ===== Stats par quatuor (somme des stats individuelles des 4 joueurs) =====
+        quatuors_stats = [q for q in ["quatuor1", "quatuor2", "quatuor3"] if compo[q]]
+        if quatuors_stats:
+            st.markdown("")
+            st.markdown("##### Stats par quatuor")
+            st.caption("Somme des stats individuelles des joueurs de chaque quatuor sur ce match.")
+            lignes_q = []
+            for q in quatuors_stats:
+                ids_q = [j["joueur_id"] for j in compo[q]]
+                sub = perfs_match[perfs_match["joueur_id"].isin(ids_q)]
+                lignes_q.append({
+                    "Quatuor": LIBELLES_COMPO[q],
+                    "Buts": int(sub["buts"].sum()),
+                    "PD": int(sub["passes_decisives"].sum()),
+                    "Tirs": int(sub["tirs_total"].sum()),
+                    "T.cad": int(sub["tirs_cadres"].sum()),
+                    "Récup.": int(sub["recuperations"].sum()),
+                    "Inter.": int(sub["interceptions"].sum()),
+                    "D.gagnés": int(sub["duels_off_gagnes"].sum() + sub["duels_def_gagnes"].sum()),
+                    "Pertes": int(sub["pertes_de_balles"].sum()),
+                    "Min cumulées": round(sub["temps_jeu_min"].sum(), 0),
+                })
+            df_q = pd.DataFrame(lignes_q)
+            st.dataframe(df_q, hide_index=True, use_container_width=True)
+
     # ===== Faits marquants =====
     st.markdown("---")
     st.subheader("⚡ Faits marquants")
@@ -1938,6 +2006,55 @@ elif page == "Fiche joueur":
         st.metric("Passes loupées", fmt(agg["passes_loupees"], mode))
         st.metric("Fautes commises", fmt(agg["fautes_commises"], mode))
         st.metric("Fautes subies", fmt(agg["fautes_subies"], mode))
+
+    st.markdown("---")
+
+    # ===== Qualité de tir (xG simplifié) + Bilan résultats =====
+    col_tir, col_bilan = st.columns(2)
+
+    with col_tir:
+        st.markdown("##### 🎯 Qualité de tir")
+        tirs_tot = float(agg_brut["tirs_total"] or 0)
+        tirs_cad = float(agg_brut["tirs_cadres"] or 0)
+        buts_j = float(agg_brut["buts"] or 0)
+        if tirs_tot > 0:
+            taux_cadrage = 100 * tirs_cad / tirs_tot
+            taux_conv = 100 * buts_j / tirs_tot
+            # Indice de danger : conversion sur tirs cadrés (efficacité quand cadré)
+            conv_cadre = 100 * buts_j / tirs_cad if tirs_cad > 0 else 0
+            cc1, cc2, cc3 = st.columns(3)
+            cc1.metric("Cadrage", f"{taux_cadrage:.0f}%", help="Part des tirs cadrés sur total tirs")
+            cc2.metric("Conversion", f"{taux_conv:.0f}%", help="Buts / total tirs")
+            cc3.metric("Efficacité cadré", f"{conv_cadre:.0f}%", help="Buts / tirs cadrés")
+            # Petit jugement qualitatif
+            if taux_conv >= 25:
+                st.caption("🟢 Finisseur efficace")
+            elif taux_conv >= 12:
+                st.caption("🟡 Finition correcte")
+            else:
+                st.caption("🔴 Finition à travailler")
+        else:
+            st.caption("Aucun tir sur la portée sélectionnée.")
+
+    with col_bilan:
+        st.markdown("##### 📋 Bilan sur ses matchs")
+        # Matchs joués par le joueur (depuis les perfs brutes, temps de jeu > 0)
+        matchs_joues_ids = df_j_brut[df_j_brut["temps_jeu_min"] > 0]["match_id"].unique().tolist()
+        if matchs_joues_ids:
+            m_joues = matchs[matchs["match_id"].isin(matchs_joues_ids)]
+            nb_v = int((m_joues["resultat"] == "Victoire").sum())
+            nb_n = int((m_joues["resultat"] == "Nul").sum())
+            nb_d = int((m_joues["resultat"] == "Défaite").sum())
+            diff_cumul = int(m_joues["diff_buts"].sum())
+            cb1, cb2, cb3, cb4 = st.columns(4)
+            cb1.metric("V", nb_v)
+            cb2.metric("N", nb_n)
+            cb3.metric("D", nb_d)
+            cb4.metric("Diff. buts", f"{diff_cumul:+d}")
+            st.caption(f"Sur {len(matchs_joues_ids)} match(s) joué(s). "
+                       f"_Bilan d'équipe quand il est présent, pas un +/- individuel._")
+        else:
+            st.caption("Aucun match joué sur la portée sélectionnée.")
 
     st.markdown("---")
     st.subheader("Joueur vs Moyenne équipe")
