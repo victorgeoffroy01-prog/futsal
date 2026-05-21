@@ -455,6 +455,41 @@ def rendu_terrain_futsal(joueurs_quatuor, gardien):
     )
 
 
+# Mapping nom de pays (français) -> code ISO 2 lettres pour le drapeau emoji
+PAYS_ISO = {
+    "france": "FR", "espagne": "ES", "portugal": "PT", "italie": "IT",
+    "allemagne": "DE", "belgique": "BE", "pays-bas": "NL", "hollande": "NL",
+    "angleterre": "GB", "royaume-uni": "GB", "ecosse": "GB", "écosse": "GB",
+    "croatie": "HR", "serbie": "RS", "slovenie": "SI", "slovénie": "SI",
+    "pologne": "PL", "ukraine": "UA", "russie": "RU", "roumanie": "RO",
+    "hongrie": "HU", "tchequie": "CZ", "tchéquie": "CZ", "republique tcheque": "CZ",
+    "slovaquie": "SK", "autriche": "AT", "suisse": "CH", "suede": "SE", "suède": "SE",
+    "norvege": "NO", "norvège": "NO", "danemark": "DK", "finlande": "FI",
+    "irlande": "IE", "grece": "GR", "grèce": "GR", "turquie": "TR",
+    "bosnie": "BA", "bosnie-herzegovine": "BA", "albanie": "AL", "kosovo": "XK",
+    "macedoine": "MK", "macédoine": "MK", "montenegro": "ME", "monténégro": "ME",
+    "bulgarie": "BG", "georgie": "GE", "géorgie": "GE", "armenie": "AM", "arménie": "AM",
+    "azerbaidjan": "AZ", "bielorussie": "BY", "biélorussie": "BY", "lituanie": "LT",
+    "lettonie": "LV", "estonie": "EE", "islande": "IS", "luxembourg": "LU",
+    "malte": "MT", "chypre": "CY", "moldavie": "MD", "andorre": "AD",
+    "bresil": "BR", "brésil": "BR", "argentine": "AR", "maroc": "MA", "algerie": "DZ",
+    "algérie": "DZ", "tunisie": "TN", "egypte": "EG", "égypte": "EG", "senegal": "SN",
+    "sénégal": "SN", "japon": "JP", "coree du sud": "KR", "corée du sud": "KR",
+    "etats-unis": "US", "états-unis": "US", "usa": "US", "canada": "CA", "mexique": "MX",
+}
+
+
+def drapeau_pays(nom):
+    """Renvoie l'emoji drapeau d'un pays à partir de son nom français, ou '' si inconnu."""
+    if not nom:
+        return ""
+    iso = PAYS_ISO.get(nom.strip().lower())
+    if not iso:
+        return ""
+    # Emoji drapeau = 2 indicateurs régionaux (offset 0x1F1E6 sur A)
+    return "".join(chr(0x1F1E6 + (ord(c) - ord("A"))) for c in iso.upper())
+
+
 # ============================================================================
 # CALCULS
 # ============================================================================
@@ -861,6 +896,51 @@ def radar_comparaison_2joueurs(stats1, stats2, nom1, nom2,
             bgcolor="rgba(0,0,0,0)"
         ),
         showlegend=True, height=460,
+        legend=dict(orientation="h", yanchor="bottom", y=-0.18,
+                    xanchor="center", x=0.5, font=dict(size=12)),
+        margin=dict(l=70, r=70, t=30, b=70),
+        paper_bgcolor="rgba(0,0,0,0)"
+    )
+    return fig
+
+
+def radar_comparaison_njoueurs(liste_stats, noms, couleurs, decimales=1):
+    """
+    Radar comparé pour 2 à 4 joueurs.
+    liste_stats : liste de dicts {libelle: valeur} (mêmes clés pour tous)
+    noms : liste des noms · couleurs : liste des couleurs (même longueur)
+    Normalisation par axe sur le max des joueurs comparés.
+    """
+    libelles = list(liste_stats[0].keys())
+    n = len(libelles)
+    # valeurs brutes par joueur
+    vals = [[s[k] or 0 for k in libelles] for s in liste_stats]
+    # max par axe (sur tous les joueurs)
+    maxes = [max([abs(vals[j][i]) for j in range(len(vals))] + [0.001]) for i in range(n)]
+    # libellés simples (les valeurs détaillées seraient illisibles à 4 joueurs)
+    labels = libelles + [libelles[0]]
+
+    fig = go.Figure()
+    for j, stats in enumerate(liste_stats):
+        vn = [vals[j][i] / maxes[i] for i in range(n)]
+        fig.add_trace(go.Scatterpolar(
+            r=vn + [vn[0]], theta=labels, fill='toself',
+            name=noms[j], line=dict(color=couleurs[j], width=2.5),
+            fillcolor=couleurs[j], opacity=0.28, marker=dict(size=6),
+            hovertemplate="%{theta}<extra>" + noms[j] + "</extra>"
+        ))
+    fig.update_layout(
+        polar=dict(
+            radialaxis=dict(visible=True, range=[0, 1.1],
+                            tickfont=dict(size=9, color="#666"),
+                            gridcolor="rgba(128,128,128,0.3)",
+                            tickvals=[0.25, 0.5, 0.75, 1.0],
+                            ticktext=["", "", "", "max"]),
+            angularaxis=dict(tickfont=dict(size=11, color="#FAFAFA"),
+                             gridcolor="rgba(128,128,128,0.3)"),
+            bgcolor="rgba(0,0,0,0)"
+        ),
+        showlegend=True, height=480,
         legend=dict(orientation="h", yanchor="bottom", y=-0.18,
                     xanchor="center", x=0.5, font=dict(size=12)),
         margin=dict(l=70, r=70, t=30, b=70),
@@ -1541,7 +1621,8 @@ elif page == "Vue équipe":
     else:
         m = matchs[matchs["match_id"] == match_id_filtre].iloc[0]
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Adversaire", m["adversaire"])
+        dr = drapeau_pays(m["adversaire"])
+        c1.metric("Adversaire", f"{dr} {m['adversaire']}".strip())
         c2.metric("Score", f"{m['score_pour']} - {m['score_contre']}")
         c3.metric("Résultat", m["resultat"])
         c4.metric("Lieu", m["lieu"] or "-")
@@ -1668,6 +1749,28 @@ elif page == "Vue équipe":
         st.caption("🟡 au-dessus de la moyenne · 🔵 dans la moyenne · "
                    "🔴 sous la moyenne. Aide à visualiser la répartition du temps de jeu.")
 
+    # ===== Classement des finisseurs =====
+    st.markdown("---")
+    st.subheader("🎯 Finisseurs — qualité de tir")
+    st.caption("Joueurs ayant tenté au moins 3 tirs. Conversion = buts / tirs tentés.")
+    perfs_fin = get_perfs()
+    perfs_fin = perfs_fin[perfs_fin["role"] != "Gardien"]
+    fin = (perfs_fin.groupby("joueur")
+           .agg(buts=("buts", "sum"), tirs=("tirs_total", "sum"),
+                tirs_cad=("tirs_cadres", "sum"))
+           .reset_index())
+    fin = fin[fin["tirs"] >= 3].copy()
+    if fin.empty:
+        st.info("Aucun joueur n'a encore tenté 3 tirs ou plus.")
+    else:
+        fin["conversion"] = (100 * fin["buts"] / fin["tirs"]).round(0)
+        fin["cadrage"] = (100 * fin["tirs_cad"] / fin["tirs"]).round(0)
+        fin = fin.sort_values(["conversion", "buts"], ascending=False)
+        fin_aff = fin[["joueur", "buts", "tirs", "tirs_cad", "cadrage", "conversion"]].copy()
+        fin_aff.columns = ["Joueur", "Buts", "Tirs", "Tirs cad.", "Cadrage %", "Conversion %"]
+        st.dataframe(fin_aff, hide_index=True, use_container_width=True,
+                     height=min(420, 36 * len(fin_aff) + 50))
+
     # ===== EXPORT PDF =====
     st.markdown("---")
     if st.button("📄 Générer un PDF de la Vue équipe", type="primary", key="pdf_vue_eq"):
@@ -1726,6 +1829,7 @@ elif page == "Match":
     match_choisi = st.selectbox("Choisir un match", matchs["libelle"].tolist())
     m_id = int(matchs.loc[matchs["libelle"] == match_choisi, "match_id"].iloc[0])
     m_row = matchs.loc[matchs["libelle"] == match_choisi].iloc[0]
+    drap = drapeau_pays(m_row["adversaire"])
 
     # ===== Score + métadonnées =====
     couleur_res = COULEUR_VERT if m_row["resultat"] == "Victoire" else (COULEUR_AMBRE if m_row["resultat"] == "Nul" else COULEUR_PRIMAIRE)
@@ -1736,7 +1840,7 @@ elif page == "Match":
         <div style="display:flex;justify-content:space-between;align-items:center;">
             <div>
                 <div style="font-size:14px;color:#888;text-transform:uppercase;">Adversaire</div>
-                <div style="font-size:28px;font-weight:600;">{m_row['adversaire']} (M{m_row['match_no']})</div>
+                <div style="font-size:28px;font-weight:600;">{drap} {m_row['adversaire']} (M{m_row['match_no']})</div>
                 <div style="font-size:13px;color:#888;margin-top:4px;">
                     {m_row['competition'] or 'Compétition non renseignée'} · {m_row['lieu'] or 'Lieu non renseigné'}
                 </div>
@@ -2222,17 +2326,45 @@ elif page == "Fiche joueur":
                            "obtient le meilleur percentile.")
 
     st.markdown("---")
-    st.subheader("Joueur vs Moyenne équipe")
-    mode_comp = st.radio(
-        "Mode de comparaison",
-        ["Stats brutes", "Par minute", "Per 40 min"],
-        horizontal=True, key="mode_comp_fj"
-    )
+    st.subheader("Joueur vs Moyenne")
+    col_m1, col_m2 = st.columns(2)
+    with col_m1:
+        mode_comp = st.radio(
+            "Mode de comparaison",
+            ["Stats brutes", "Par minute", "Per 40 min"],
+            horizontal=True, key="mode_comp_fj"
+        )
+    with col_m2:
+        ref_comp = st.radio(
+            "Référence",
+            ["Toute l'équipe", "Son poste"],
+            horizontal=True, key="ref_comp_fj"
+        )
 
     perfs_all_mode = appliquer_mode(get_perfs(), mode_comp)
     perfs_all_mode = perfs_all_mode[perfs_all_mode["role"] != "Gardien"]
     agg_all_mode = agreger_joueur(perfs_all_mode, mode_comp)
-    moy_equipe = agg_all_mode.mean(numeric_only=True)
+
+    # Référence : toute l'équipe OU uniquement le poste du joueur
+    poste_joueur = None
+    if ref_comp == "Son poste":
+        if "poste" in agg_all_mode.columns and not df_j_brut.empty:
+            poste_joueur = agg_all_mode.loc[
+                agg_all_mode["joueur_id"] == int(df_j_brut["joueur_id"].iloc[0]), "poste"
+            ]
+            poste_joueur = poste_joueur.iloc[0] if len(poste_joueur) else None
+        if poste_joueur:
+            grp_ref = agg_all_mode[agg_all_mode["poste"] == poste_joueur]
+        else:
+            grp_ref = agg_all_mode
+    else:
+        grp_ref = agg_all_mode
+    moy_equipe = grp_ref.mean(numeric_only=True)
+    nb_ref = len(grp_ref)
+    label_ref = (f"Moy. poste « {poste_joueur} » ({nb_ref})"
+                 if ref_comp == "Son poste" and poste_joueur else f"Moy. équipe ({nb_ref})")
+    if ref_comp == "Son poste" and nb_ref < 2:
+        st.caption(f"⚠️ Seulement {nb_ref} joueur(s) à ce poste : comparaison peu significative.")
 
     df_j_mode = appliquer_mode(df_j_brut, mode_comp)
     if match_id_filtre is None:
@@ -2262,14 +2394,14 @@ elif page == "Fiche joueur":
     col_bar, col_rad = st.columns([1.1, 1])
     with col_bar:
         fig_bar = barres_horizontales_comparaison(
-            labels_c, val_j, val_m, nom_joueur=joueur_sel, nom_ref="Moy. Équipe",
+            labels_c, val_j, val_m, nom_joueur=joueur_sel, nom_ref=label_ref,
             decimales=dec_comp
         )
         st.plotly_chart(fig_bar, use_container_width=True)
     with col_rad:
         st.markdown("**Radar profil (échelle normalisée par axe)**")
         fig_rad = radar_normalise(val_j, val_m, labels_c,
-                                  nom_joueur=joueur_sel, nom_ref="Moy. équipe",
+                                  nom_joueur=joueur_sel, nom_ref=label_ref,
                                   decimales=dec_comp)
         st.plotly_chart(fig_rad, use_container_width=True)
 
@@ -2398,27 +2530,39 @@ elif page == "Comparaison":
     st.title("Comparaison de joueurs")
     portee, mode, match_id_filtre, perfs_raw, perfs_mode = filtres_page(
         avec_mode=False, key_suffix="comparaison")
-    st.markdown("---")
 
     joueurs_dispo = sorted(perfs_raw[perfs_raw["role"] != "Gardien"]["joueur"].unique())
     if len(joueurs_dispo) < 2:
         st.warning("Pas assez de joueurs.")
         st.stop()
 
-    c1, c2 = st.columns(2)
-    j1 = c1.selectbox("Joueur 1", joueurs_dispo, index=0)
-    j2 = c2.selectbox("Joueur 2", joueurs_dispo,
-                      index=1 if joueurs_dispo[1] != j1 else 0)
-    if j1 == j2:
-        st.info("Sélectionne deux joueurs différents.")
+    # Nombre de joueurs à comparer (2 à 4)
+    nb_max = min(4, len(joueurs_dispo))
+    nb_joueurs = st.radio("Nombre de joueurs à comparer", list(range(2, nb_max + 1)),
+                          horizontal=True, key="nb_cmp")
+
+    AUCUN = "— Aucun —"
+    cols_sel = st.columns(nb_joueurs)
+    choix = []
+    for i in range(nb_joueurs):
+        opts = joueurs_dispo if i < 2 else [AUCUN] + joueurs_dispo
+        idx_def = i if i < len(joueurs_dispo) else 0
+        with cols_sel[i]:
+            sel = st.selectbox(f"Joueur {i+1}", opts, index=idx_def, key=f"cmp_j{i}")
+        if sel != AUCUN:
+            choix.append(sel)
+
+    # Dédoublonnage en gardant l'ordre
+    joueurs_cmp = list(dict.fromkeys(choix))
+    if len(joueurs_cmp) < 2:
+        st.info("Sélectionne au moins deux joueurs différents.")
         st.stop()
 
-    # Sélecteur de mode (Per 40 par défaut = mode recommandé)
     mode_cmp = st.radio(
         "Mode de comparaison",
         ["Stats brutes", "Par minute", "Per 40 min"],
         horizontal=True, key="mode_cmp", index=2,
-        help="Brutes = totaux. Par minute = stat / min jouées. Per 40 = extrapolation sur un match complet (recommandé pour comparer des joueurs avec des temps de jeu différents)."
+        help="Brutes = totaux. Par minute = stat / min jouées. Per 40 = extrapolation sur un match complet."
     )
     st.caption(f"Portée : {portee} · Mode : {mode_cmp}")
 
@@ -2430,12 +2574,9 @@ elif page == "Comparaison":
             return agreger_joueur(sub, mode_cmp).iloc[0]
         return sub.iloc[0]
 
-    s1 = stats_joueur(j1)
-    s2 = stats_joueur(j2)
+    stats_par_joueur = {nom: stats_joueur(nom) for nom in joueurs_cmp}
 
-    # Suffixe d'affichage selon le mode
     suffixe = {"Stats brutes": "", "Par minute": "/min", "Per 40 min": "/40"}[mode_cmp]
-
     indicateurs = [
         (f"Buts{suffixe}", "buts"), (f"PD{suffixe}", "passes_decisives"),
         (f"Tirs{suffixe}", "tirs_total"), (f"Tirs cadrés{suffixe}", "tirs_cadres"),
@@ -2444,13 +2585,11 @@ elif page == "Comparaison":
         (f"Pertes{suffixe}", "pertes_de_balles"), (f"Fautes commises{suffixe}", "fautes_commises"),
     ]
 
-    # Formatage : entier en brutes, 3 décimales en par minute (valeurs petites), 2 sinon
-    # Format string forcé pour que Streamlit affiche correctement les décimales
     if mode_cmp == "Stats brutes":
         decimales = 0
     elif mode_cmp == "Par minute":
         decimales = 3
-    else:  # Per 40 min
+    else:
         decimales = 2
 
     def _fmt_cmp(v):
@@ -2460,72 +2599,86 @@ elif page == "Comparaison":
             return f"{int(round(v))}"
         return f"{v:.{decimales}f}"
 
-    tab_comp = pd.DataFrame({
-        "Indicateur": [lbl for lbl, _ in indicateurs],
-        j1: [_fmt_cmp(s1[c]) for _, c in indicateurs],
-        j2: [_fmt_cmp(s2[c]) for _, c in indicateurs],
-    })
+    # Tableau comparatif (une colonne par joueur)
+    tab_dict = {"Indicateur": [lbl for lbl, _ in indicateurs]}
+    for nom in joueurs_cmp:
+        s = stats_par_joueur[nom]
+        tab_dict[nom] = [_fmt_cmp(s[c]) for _, c in indicateurs]
+    tab_comp = pd.DataFrame(tab_dict)
 
-    # Rappel temps de jeu (utile pour interpréter le mode brut)
-    tj1 = s1.get("temps_jeu_min", 0) or 0
-    tj2 = s2.get("temps_jeu_min", 0) or 0
-    st.caption(f"⏱ {j1} : {tj1:.1f} min jouées · {j2} : {tj2:.1f} min jouées")
-    col_t, col_b = st.columns([1, 1.3])
-    with col_t:
-        st.subheader("Tableau comparatif")
-        st.dataframe(tab_comp, hide_index=True, use_container_width=True)
-    with col_b:
-        st.subheader("Comparaison par indicateur")
-        labels_i = [lbl for lbl, _ in indicateurs]
-        v1 = [s1[c] if pd.notna(s1[c]) else 0 for _, c in indicateurs]
-        v2 = [s2[c] if pd.notna(s2[c]) else 0 for _, c in indicateurs]
-        # Mêmes couleurs que le radar : j1=ROUGE, j2=BLEU
-        fig = barres_horizontales_comparaison(
-            labels_i, v1, v2, nom_joueur=j1, nom_ref=j2,
-            couleur_joueur=COULEUR_PRIMAIRE, couleur_ref=COULEUR_BLEU,
-            decimales=decimales if decimales > 0 else 1
-        )
-        st.plotly_chart(fig, use_container_width=True)
+    # Rappel temps de jeu
+    tj_txt = " · ".join(
+        f"{nom} : {(stats_par_joueur[nom].get('temps_jeu_min', 0) or 0):.1f} min"
+        for nom in joueurs_cmp
+    )
+    st.caption(f"⏱ {tj_txt}")
+
+    # Palette pour 4 joueurs
+    palette_cmp = [COULEUR_PRIMAIRE, COULEUR_BLEU, FFF_DORE, COULEUR_VERT]
+    couleurs_cmp = [palette_cmp[i % len(palette_cmp)] for i in range(len(joueurs_cmp))]
+
+    st.subheader("Tableau comparatif")
+    st.dataframe(tab_comp, hide_index=True, use_container_width=True)
+
+    st.markdown("---")
+    st.subheader("Comparaison par indicateur")
+    labels_i = [lbl for lbl, _ in indicateurs]
+    fig_barres = go.Figure()
+    for j, nom in enumerate(joueurs_cmp):
+        s = stats_par_joueur[nom]
+        vals = [s[c] if pd.notna(s[c]) else 0 for _, c in indicateurs]
+        fig_barres.add_trace(go.Bar(
+            y=labels_i, x=vals, orientation="h", name=nom,
+            marker=dict(color=couleurs_cmp[j]),
+            text=[f"{v:.{max(decimales,1)}f}" if decimales else f"{int(round(v))}" for v in vals],
+            textposition="outside", textfont=dict(size=10), cliponaxis=False
+        ))
+    fig_barres.update_layout(
+        barmode="group", height=max(450, 48 * len(labels_i) + 80),
+        margin=dict(l=10, r=50, t=20, b=20),
+        xaxis=dict(showgrid=True, gridcolor="rgba(128,128,128,0.15)"),
+        yaxis=dict(autorange="reversed", automargin=True),
+        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5)
+    )
+    st.plotly_chart(fig_barres, use_container_width=True)
 
     st.markdown("---")
     st.subheader("Radar comparé (échelle normalisée par axe)")
-    radar_s1 = {
-        "Buts": s1["buts"] or 0, "Passes D.": s1["passes_decisives"] or 0,
-        "Tirs cad.": s1["tirs_cadres"] or 0, "Récup.": s1["recuperations"] or 0,
-        "Inter.": s1["interceptions"] or 0,
-        "Duels +": (s1["duels_off_gagnes"] or 0) + (s1["duels_def_gagnes"] or 0)
-    }
-    radar_s2 = {
-        "Buts": s2["buts"] or 0, "Passes D.": s2["passes_decisives"] or 0,
-        "Tirs cad.": s2["tirs_cadres"] or 0, "Récup.": s2["recuperations"] or 0,
-        "Inter.": s2["interceptions"] or 0,
-        "Duels +": (s2["duels_off_gagnes"] or 0) + (s2["duels_def_gagnes"] or 0)
-    }
+    def radar_dict(s):
+        return {
+            "Buts": s["buts"] or 0, "Passes D.": s["passes_decisives"] or 0,
+            "Tirs cad.": s["tirs_cadres"] or 0, "Récup.": s["recuperations"] or 0,
+            "Inter.": s["interceptions"] or 0,
+            "Duels +": (s["duels_off_gagnes"] or 0) + (s["duels_def_gagnes"] or 0)
+        }
+    liste_radar = [radar_dict(stats_par_joueur[nom]) for nom in joueurs_cmp]
     st.plotly_chart(
-        radar_comparaison_2joueurs(radar_s1, radar_s2, j1, j2,
-                                    couleur1=COULEUR_PRIMAIRE, couleur2=COULEUR_BLEU,
-                                    decimales=decimales if decimales > 0 else 1),
+        radar_comparaison_njoueurs(liste_radar, joueurs_cmp, couleurs_cmp,
+                                   decimales=decimales if decimales > 0 else 1),
         use_container_width=True
     )
 
     # ===== EXPORT PDF =====
     st.markdown("---")
     if st.button("📄 Générer un PDF de la comparaison", type="primary", key="pdf_cmp"):
-        tab_data = [[f"Indicateur ({mode_cmp})", j1, j2]]
+        entete = ["Indicateur"] + joueurs_cmp
+        tab_data = [entete]
         for lbl, col in indicateurs:
-            v1_str = _fmt_cmp(s1[col])
-            v2_str = _fmt_cmp(s2[col])
-            tab_data.append([lbl, v1_str, v2_str])
+            ligne = [lbl] + [_fmt_cmp(stats_par_joueur[nom][col]) for nom in joueurs_cmp]
+            tab_data.append(ligne)
+        largeur_col = (16 / (len(joueurs_cmp) + 1))
         sections = [
-            {"type": "table", "title": f"{j1} vs {j2} ({mode_cmp})",
+            {"type": "table", "title": f"Comparaison ({mode_cmp})",
              "data": tab_data,
-             "widths": [6*cm, 5*cm, 5*cm]},
+             "widths": [largeur_col * cm] * (len(joueurs_cmp) + 1)},
         ]
         pdf_buf = pdf_generique("Comparaison de joueurs", equipe["nom"], sections)
+        noms_fichier = "_".join(n.replace(" ", "").replace(".", "") for n in joueurs_cmp)
         st.download_button(
             label="⬇ Télécharger le PDF",
             data=pdf_buf,
-            file_name=f"compare_{j1.replace(' ','_').replace('.','')}_vs_{j2.replace(' ','_').replace('.','')}_{date.today().strftime('%Y%m%d')}.pdf",
+            file_name=f"compare_{noms_fichier}_{date.today().strftime('%Y%m%d')}.pdf",
             mime="application/pdf",
             key="dl_cmp"
         )
@@ -3086,6 +3239,7 @@ elif page == "Calendrier":
                 date_str = m["date_match"] if pd.notna(m["date_match"]) and m["date_match"] else "Date non renseignée"
                 compet = m["competition"] or "—"
                 lieu = m["lieu"] or "—"
+                drap_cal = drapeau_pays(m["adversaire"])
 
                 st.markdown(f"""
                 <div style="background:rgba(128,128,128,0.08);padding:18px;border-radius:8px;
@@ -3093,7 +3247,7 @@ elif page == "Calendrier":
                     <div style="display:flex;justify-content:space-between;align-items:center;">
                         <div style="flex:1;">
                             <div style="font-size:13px;color:#888;text-transform:uppercase;">{date_str} · {compet}</div>
-                            <div style="font-size:22px;font-weight:600;margin-top:6px;">{m['libelle']}</div>
+                            <div style="font-size:22px;font-weight:600;margin-top:6px;">{drap_cal} {m['libelle']}</div>
                             <div style="font-size:13px;color:#888;margin-top:4px;">📍 {lieu}</div>
                         </div>
                         <div style="text-align:right;">
